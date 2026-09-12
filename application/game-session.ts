@@ -1,14 +1,12 @@
 import { IndexedDbProfileRepository } from 'idle-game-kit/web';
 import type { StoredProfile } from 'idle-game-kit';
 import type { MinuteVanguardState } from '../definitions/types';
-import { advanceFromWallClock, createInitialState } from '../plugin/engine';
+import { advanceFromWallClock, createInitialState, normalizeLoadedState } from '../plugin/engine';
 
 const PROFILE_ID = 'main';
 
 export class GameSession {
-  readonly #repository = new IndexedDbProfileRepository<MinuteVanguardState>({
-    dbName: 'minute-vanguard',
-  });
+  readonly #repository = new IndexedDbProfileRepository<MinuteVanguardState>({ dbName: 'minute-vanguard' });
 
   async load(nowMs = Date.now()): Promise<MinuteVanguardState> {
     const stored = await this.#repository.load(PROFILE_ID);
@@ -17,17 +15,14 @@ export class GameSession {
       await this.save(initial, nowMs);
       return initial;
     }
-    const advanced = advanceFromWallClock(stored.state, nowMs);
+    const normalized = normalizeLoadedState(stored.state, nowMs);
+    const advanced = advanceFromWallClock(normalized, nowMs);
     if (advanced.state !== stored.state) await this.save(advanced.state, nowMs);
     return advanced.state;
   }
 
   async save(state: MinuteVanguardState, savedAtMs = Date.now()): Promise<void> {
-    const profile: StoredProfile<MinuteVanguardState> = {
-      profileId: PROFILE_ID,
-      savedAtMs,
-      state,
-    };
+    const profile: StoredProfile<MinuteVanguardState> = { profileId: PROFILE_ID, savedAtMs, state };
     await this.#repository.save(profile);
   }
 

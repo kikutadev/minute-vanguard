@@ -1,26 +1,46 @@
 # Minute Vanguard — Concept
 
-Status: initial playable vertical slice
+Status: playable reference-faithful vertical slice
 
 ## Product promise
 
-One meaningful battle is always the next thing the player is waiting for. The waiting window is not dead time: it is where the player evaluates drops, upgrades equipment, checks the codex and prepares a durable job change.
+One compact battle is always the next thing the player is waiting for. The waiting window is active preparation time: buy or improve equipment, inspect the collection, claim daily rewards, manage pets, and prepare a job change.
 
-## Reward loop
+The target feeling is not a generic idle RPG. It is a dense mobile text-RPG loop where one explicit battle produces several small chances to get lucky, then immediately creates the next anticipation window.
+
+## Core loop
 
 ```text
-Anticipation: countdown + unknown breach
+Anticipation: short countdown + unknown encounter
 Action: one Battle command
-Reveal: enemy / elite state / deterministic turn result
-Guaranteed reward: EXP + Gold on victory
-Variable upside: jackpot / equipment rarity / permanent ATK / shard / new codex entry
-Escalation: stronger enemy pool + equipment + level
-Long-term reset: job change retains durable collection and makes future cadence stronger
-Next anticipation: authoritative cooldown immediately starts after the result
+Reveal: opponent + turn-by-turn combat
+Guaranteed progress: EXP / Gold on victory
+Variable upside: streak / jackpot / Gem / permanent stat / equipment / orb / pet capture
+Preparation: Equipment / Orb / Mission / Pet / Job decisions while waiting
+Long-term growth: Lv.30 job changes + retained collections + permanent bonuses
+Next anticipation: cooldown starts immediately after the resolved battle
 ```
 
-The product must never make UI animation or browser timers authoritative. Combat result, rewards, RNG state and cooldown readiness are all Domain state.
+## UI principle
+
+The game is designed as a portrait mobile app shell rather than a scrolling landing page.
+
+- top profile/status remains visible
+- bottom five-tab navigation remains visible
+- Battle is the visual and navigational center
+- transient systems such as missions and job change appear as sheets over Battle
+- battle result is an interruptive reward reveal, then returns the player directly to the same waiting loop
+
+The player should never need to wonder what to do next: fight if ready; otherwise improve something that matters before the next fight.
+
+## Reward principle
+
+A battle should rarely end with only one number changing. Even an ordinary victory can advance several tracks at once: level, Gold, Gem, codex, streak, equipment, orb, permanent stats, pet eligibility and daily missions. The important design constraint is that these rolls remain legible rather than collapsing into noise.
+
+## Authority boundary
+
+UI animation and browser timers are never authoritative. Combat result, rewards, RNG stream state, cooldown readiness, mission claimability and pet capture all live in Domain state and are reproducible by the same-core simulator.
 
 ## Originality boundary
 
-The implementation takes inspiration from the broad design pattern of timer-gated compact RPG battles, but does not copy names, text, artwork, monsters, story, UI layout, balance values or source code from another product. The world, progression values and presentation are original to Minute Vanguard.
+Hero60RPG is used as a structural product reference for interaction cadence and system composition. Minute Vanguard does not copy its source code, artwork, monster names, story text or proprietary assets. The implementation uses original names/content while reproducing the relevant gameplay structure on top of `idle-game-kit`.

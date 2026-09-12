@@ -3,6 +3,7 @@ import { battleCooldown, createInitialState, fight, goldBalance } from '../plugi
 export type SimulationSummary = Readonly<{
   battles: number;
   victories: number;
+  draws: number;
   defeats: number;
   finalLevel: number;
   finalGold: number;
@@ -29,6 +30,7 @@ export function simulateBattles(count: number, seed = 0x60b0_2026): SimulationSu
   return {
     battles: state.gameData.totalBattles,
     victories: state.gameData.victories,
+    draws: state.gameData.draws,
     defeats: state.gameData.defeats,
     finalLevel: state.gameData.player.level,
     finalGold: goldBalance(state),

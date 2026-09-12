@@ -1,45 +1,69 @@
 # Minute Vanguard
 
-`Minute Vanguard` is an original short-cadence idle/collection RPG built as an independent consumer of `idle-game-kit`.
+`Minute Vanguard` is an original short-cadence text RPG built as an independent consumer of `idle-game-kit`.
 
-The core loop is deliberately discrete rather than always-on:
+Its product reference is the current Hero60-style interaction model: one explicit monster battle, a short authoritative cooldown, then equipment / orb / mission / pet / job decisions while waiting for the next battle.
+
+## Current playable loop
 
 ```text
-Battle now
-→ immediate deterministic combat result
-→ layered rewards / loot / discovery
-→ authoritative cooldown window
-→ equipment / upgrade / job decisions while waiting
-→ next battle
+Battle
+→ deterministic 20-turn-cap combat
+→ layered reward reveal
+→ 5-second beginner / 60-second normal cooldown
+→ Equipment / Orb / Mission / Pet decisions
+→ Lv.30 Job Change and durable growth
+→ next Battle
 ```
 
-## Current vertical slice
+Implemented in the current build:
 
-- deterministic seeded encounters and auto-battle resolution
-- 5-second onboarding cadence, then 60-second battle cadence with job-based reduction
-- Gold / Bell Shard economy via Kit Currency + Reward primitives
-- randomized equipment drops with rarity and auto-equip comparison
-- shop purchases and equipment upgrades
-- reusable Kit Inventory / Loadout integration
-- level progression and Lv.10 job change with durable retention
-- enemy codex discovery
-- jackpot Gold and low-probability permanent ATK reward
-- IndexedDB save and wall-clock/offline cooldown progression
+- portrait app shell with persistent top status and five bottom tabs
+- first 10 successful defeats use a 5-second cooldown; normal cadence is 60 seconds
+- six combat stats: HP / ATK / DEF / MAT / MDF / LUK
+- physical and magical combat, crit/evasion, 1% mutation encounters
+- streak reward multipliers and Gold jackpot rolls
+- first-defeat Gem rewards, rarity-sensitive Gem drops, 1% permanent stat rewards
+- randomized ±30% level growth with Great Growth
+- Weapon / Armor / Orb loadout using Kit Inventory / Loadout
+- Equipment-tab buy / equip / +1〜+5 upgrade / discard flow
+- F〜SSS orb gacha and special effects
+- nine jobs and Lv.30 job change with permanent-growth conditions
+- five claimable daily missions with JST-midnight reset
+- 30-kill pet capture eligibility, 1% capture, active pet follow-up attack
+- collection/codex view
+- IndexedDB save and wall-clock cooldown progression
 - same-core headless simulator
 - GitHub Pages workflow that uploads `dist/` only
 
 ## Kit boundary
 
-Reusable `Cooldown` and minimal `Inventory / Loadout` are implemented in `idle-game-kit`. Combat turns, enemy selection, drop stats, job-change effects and presentation remain product-owned typed code.
+Reusable `Cooldown`, `Inventory`, `Loadout`, Currency, Reward, deterministic RNG and browser persistence are provided by `idle-game-kit`.
 
-The repository vendors the built Kit package under `vendor/idle-game-kit` because the Kit is not yet published to a package registry. Source-level sibling imports are intentionally forbidden so this repository remains independently buildable.
+Product-owned typed code remains responsible for:
+
+- turn combat
+- encounter tables
+- jobs and combat skills
+- concrete equipment/orb balance
+- pet capture and party rules
+- mission conditions
+- presentation and reward-reveal sequencing
+
+The repository vendors the built Kit package under `vendor/idle-game-kit` because the Kit is not yet published to a package registry. Source-level sibling imports are intentionally forbidden so this repository stays independently buildable.
+
+## Online boundary
+
+Ranking, PvP/Champion, shared Raid, chat, account/payment and other shared-world systems are intentionally not simulated as fake local features. They require a separate server-authoritative service.
 
 ## Development
 
 ```bash
 pnpm install --frozen-lockfile
-pnpm check
-pnpm dev
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ```
 
 Production output is written to `dist/` with relative asset URLs so the same build works under a GitHub Pages repository subpath.

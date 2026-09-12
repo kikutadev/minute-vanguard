@@ -5,15 +5,21 @@ import type {
   LoadoutState,
 } from 'idle-game-kit';
 
-export type EquipmentKind = 'weapon' | 'armor';
-export type EquipmentRarity = 'common' | 'uncommon' | 'rare' | 'epic';
+export type StatKey = 'hp' | 'attack' | 'defense' | 'magicAttack' | 'magicDefense' | 'luck';
+export type StatValues = Readonly<Record<StatKey, number>>;
+export type EquipmentKind = 'weapon' | 'armor' | 'orb';
+export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'boss';
+export type OrbRank = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'SS' | 'SSS';
 
 export type EquipmentData = Readonly<{
   kind: EquipmentKind;
-  attack: number;
-  defense: number;
-  rarity: EquipmentRarity;
+  rarity: MonsterRarity;
   upgradeRank: number;
+  flatStats: Partial<StatValues>;
+  percentStats?: Partial<StatValues>;
+  orbRank?: OrbRank;
+  effectId?: string;
+  effectValue?: number;
   source: string;
 }>;
 
@@ -21,31 +27,56 @@ export type EnemyDefinition = Readonly<{
   id: string;
   displayName: string;
   glyph: string;
-  unlockWins: number;
+  rarity: MonsterRarity;
+  monsterLevel: number;
   hp: number;
   attack: number;
   defense: number;
+  magicAttack: number;
+  magicDefense: number;
+  luck: number;
   exp: number;
   gold: number;
-  dropChance: number;
-  itemPool: readonly string[];
+  gemDropChance: number;
+  orbDropChance: number;
+  specialChance: number;
+  attackType: 'physical' | 'magic';
+  quote: string;
 }>;
 
-export type VocationDefinition = Readonly<{
+export type JobDefinition = Readonly<{
   id: string;
   displayName: string;
-  requiredJobRank: number;
-  attackMultiplier: number;
-  defenseMultiplier: number;
-  cooldownReductionSec: number;
+  skillName: string;
+  skillDescription: string;
+  growth: StatValues;
+  unlock?: 'always' | 'job-change-10' | 'pet-10';
 }>;
 
 export type BattleTurn = Readonly<{
   turn: number;
   playerDamage: number;
+  playerExtraDamage: number;
   enemyDamage: number;
+  petDamage: number;
+  heal: number;
   critical: boolean;
   dodged: boolean;
+  enemySpecial: boolean;
+  playerHpAfter: number;
+  enemyHpAfter: number;
+  logs: readonly string[];
+}>;
+
+export type PermanentStatReward = Readonly<{
+  stat: StatKey;
+  amount: number;
+}>;
+
+export type LevelGrowthResult = Readonly<{
+  level: number;
+  greatGrowth: boolean;
+  gains: StatValues;
 }>;
 
 export type BattleResult = Readonly<{
@@ -53,27 +84,49 @@ export type BattleResult = Readonly<{
   enemyId: string;
   enemyName: string;
   enemyGlyph: string;
-  victory: boolean;
+  enemyRarity: MonsterRarity;
+  mutated: boolean;
+  outcome: 'victory' | 'draw' | 'defeat';
   turns: readonly BattleTurn[];
+  playerHpStart: number;
   playerHpRemaining: number;
+  playerHpMax: number;
+  enemyHpMax: number;
   enemyHpRemaining: number;
-  goldGained: number;
+  goldDelta: number;
   expGained: number;
-  jackpotGold: number;
-  permanentPowerGain: number;
+  gemGained: number;
+  streak: number;
+  streakMultiplier: number;
+  jackpotMultiplier: number;
+  permanentStatReward: PermanentStatReward | null;
+  levelGrowths: readonly LevelGrowthResult[];
   droppedItemInstanceId: string | null;
-  discoveredEnemy: boolean;
+  droppedOrbInstanceId: string | null;
+  firstDefeat: boolean;
+  capturedPetEnemyId: string | null;
 }>;
 
 export type PlayerProgress = Readonly<{
+  name: string;
   level: number;
   exp: number;
-  jobRank: number;
-  vocationId: string;
-  baseAttack: number;
-  baseDefense: number;
-  baseHp: number;
-  permanentPower: number;
+  currentHp: number;
+  jobId: string;
+  totalJobChanges: number;
+  jobBonusCounts: Readonly<Record<string, number>>;
+  growthBonusPct: number;
+  baseStats: StatValues;
+  permanentStats: StatValues;
+  petCount: number;
+}>;
+
+export type PermanentUpgradeState = Readonly<{
+  cooldownReduction: boolean;
+  expMultiplier: boolean;
+  goldMultiplier: boolean;
+  orbDropMultiplier: boolean;
+  drawExpMultiplier: boolean;
 }>;
 
 export type MinuteVanguardGameData = Readonly<{
@@ -83,10 +136,19 @@ export type MinuteVanguardGameData = Readonly<{
   loadout: LoadoutState;
   totalBattles: number;
   victories: number;
+  draws: number;
   defeats: number;
+  killCounts: Readonly<Record<string, number>>;
   discoveredEnemyIds: readonly string[];
+  lastDefeatedEnemyId: string | null;
+  consecutiveDefeats: number;
   nextItemSequence: number;
   lastBattle: BattleResult | null;
+  rareGuaranteeActive: boolean;
+  permanentUpgrades: PermanentUpgradeState;
+  ownedPetEnemyIds: readonly string[];
+  activePetEnemyIds: readonly string[];
+  missionProgress: Readonly<{ dayKey: string; battles: number; wins: number; upgrades: number; claimed: readonly string[] }>;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;
