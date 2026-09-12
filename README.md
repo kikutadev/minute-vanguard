@@ -67,3 +67,8 @@ pnpm build
 ```
 
 Production output is written to `dist/` with relative asset URLs so the same build works under a GitHub Pages repository subpath.
+
+
+## Reference parity workflow
+
+Benchmark mechanics are tracked with a public-reference contract, live guide/patch-note audit and Domain parity tests. See `docs/REFERENCE-PARITY.md`.

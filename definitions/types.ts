@@ -10,6 +10,7 @@ export type StatValues = Readonly<Record<StatKey, number>>;
 export type EquipmentKind = 'weapon' | 'armor' | 'orb';
 export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'boss';
 export type OrbRank = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'SS' | 'SSS';
+export type OrbEffectId = 'gemDrop' | 'goldProtection' | 'gold' | 'exp' | 'drawExp' | 'regen' | 'greatGrowth' | 'critical' | 'evasion' | 'cooldown';
 
 export type EquipmentData = Readonly<{
   kind: EquipmentKind;
@@ -18,8 +19,11 @@ export type EquipmentData = Readonly<{
   flatStats: Partial<StatValues>;
   percentStats?: Partial<StatValues>;
   orbRank?: OrbRank;
-  effectId?: string;
+  effectId?: OrbEffectId;
   effectValue?: number;
+  effectLevel?: number;
+  favorite?: boolean;
+  locked?: boolean;
   source: string;
 }>;
 
@@ -148,6 +152,7 @@ export type MinuteVanguardGameData = Readonly<{
   permanentUpgrades: PermanentUpgradeState;
   ownedPetEnemyIds: readonly string[];
   activePetEnemyIds: readonly string[];
+  orbCapacity: number;
   missionProgress: Readonly<{ dayKey: string; battles: number; wins: number; upgrades: number; claimed: readonly string[] }>;
 }>;
 

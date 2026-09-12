@@ -9,9 +9,11 @@
     "build": "tsc --noEmit && vite build --config vite.config.ts",
     "typecheck": "tsc --noEmit --pretty false",
     "test": "vitest run --config vitest.config.ts",
-    "lint": "eslint definitions plugin application simulator web tests vite.config.ts vitest.config.ts",
+    "lint": "eslint definitions plugin application simulator web tests reference vite.config.ts vitest.config.ts",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
-    "preview": "vite preview --config vite.config.ts"
+    "preview": "vite preview --config vite.config.ts",
+    "reference:audit": "node scripts/reference-audit.mjs",
+    "check:reference": "pnpm reference:audit && vitest run --config vitest.config.ts tests/reference-parity.test.ts"
   },
   "dependencies": {
     "idle-game-kit": "file:./vendor/idle-game-kit",

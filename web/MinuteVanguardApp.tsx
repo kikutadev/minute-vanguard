@@ -3,6 +3,7 @@ import { GameSession } from '../application/game-session';
 import {
   enemies,
   itemDefinitions,
+  orbRanks,
   permanentUpgradeDefinitions,
   shopEquipmentOffers,
   type PermanentUpgradeId,
@@ -17,12 +18,15 @@ import {
   buyPermanentUpgrade,
   changeJob,
   claimDailyMission,
+  combineOrb,
   cooldownSkipCost,
+  canSkipBattleCooldown,
   currentJob,
   currentJobBonusRequirement,
   discardItem,
   drawOrb,
   effectiveBattleCooldownSec,
+  expandOrbCapacity,
   equipOwnedItem,
   expRequiredForNextLevel,
   fight,
@@ -30,16 +34,23 @@ import {
   goldBalance,
   healAtInn,
   jobChangeCost,
+  orbCombineCost,
+  orbFreeSlots,
+  orbInventoryCount,
+  orbRerollCost,
   playerCombatStats,
+  rerollOrbStats,
   setActivePet,
   skipBattleCooldown,
+  toggleOrbFavorite,
+  toggleOrbLock,
   upgradeItem,
 } from '../plugin/engine';
 
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet';
-type Modal = 'mission' | 'job' | 'menu' | null;
+type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | null;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
 export function MinuteVanguardApp() {
@@ -151,9 +162,13 @@ export function MinuteVanguardApp() {
           else commit(result.state, '装備を購入しました');
         }} onOrbDraw={(count) => {
           const result = drawOrb(state, count);
-          if (!result.accepted) setNotice('オーブガチャに必要なジェムが足りません');
+          if (!result.accepted) setNotice(result.reason === 'insufficient-orb-slots' ? `空き枠が足りません（残り ${orbFreeSlots(state)}）` : 'オーブガチャに必要なジェムが足りません');
           else commit(result.state, `${count}個のオーブを獲得しました`);
-        }} onPetToggle={(enemyId, active) => {
+        }} onOrbExpand={() => {
+          const result = expandOrbCapacity(state);
+          if (!result.accepted) setNotice('枠拡張に必要な100ジェムが足りません');
+          else commit(result.state, `オーブ所持枠を ${result.state.gameData.orbCapacity} に拡張しました`);
+        }} onCombineOpen={() => setModal('orb-combine')} onPetToggle={(enemyId, active) => {
           const result = setActivePet(state, enemyId, active);
           if (!result.accepted) setNotice(result.reason === 'party-full' ? '編成枠がいっぱいです' : 'そのペットは未所持です');
           else commit(result.state, active ? 'ペットを編成しました' : 'ペットを編成から外しました');
@@ -183,14 +198,30 @@ export function MinuteVanguardApp() {
         const result = upgradeItem(state, selectedItem.instanceId);
         if (!result.accepted) setNotice(result.reason === 'max-rank' ? '強化上限です' : result.reason === 'orb-not-upgradeable' ? 'オーブは通常強化できません' : 'Goldが足りません');
         else commit(result.state, '装備を強化しました');
+      }} onFavorite={() => {
+        const result = toggleOrbFavorite(state, selectedItem.instanceId);
+        if (result.accepted) commit(result.state, selectedItem.data?.favorite ? 'お気に入りを解除しました' : 'お気に入りに追加しました');
+      }} onLock={() => {
+        const result = toggleOrbLock(state, selectedItem.instanceId);
+        if (result.accepted) commit(result.state, selectedItem.data?.locked ? 'ロックを解除しました' : 'オーブをロックしました');
+      }} onReroll={(lockedStats) => {
+        const result = rerollOrbStats(state, selectedItem.instanceId, lockedStats);
+        if (!result.accepted) setNotice(result.reason === 'insufficient-gems' ? '再抽選に必要なジェムが足りません' : '再抽選できません');
+        else commit(result.state, 'オーブのステータス配分を再抽選しました');
       }} onDiscard={() => {
         const result = discardItem(state, selectedItem.instanceId);
-        if (result.accepted) { commit(result.state, '装備を破棄しました'); setSelectedItemId(null); }
+        if (!result.accepted) setNotice(result.reason === 'protected-item' ? 'ロックまたはお気に入り中のオーブは破棄できません' : '破棄できません');
+        else { commit(result.state, '装備を破棄しました'); setSelectedItemId(null); }
       }} />}
       {modal === 'mission' && <MissionModal state={state} onClose={() => setModal(null)} onClaim={(missionId) => {
         const result = claimDailyMission(state, missionId);
         if (!result.accepted) setNotice(result.reason === 'already-claimed' ? '受取済みです' : 'まだ達成していません');
         else commit(result.state, 'デイリーミッション報酬を受け取りました');
+      }} />}
+      {modal === 'orb-combine' && <OrbCombineModal state={state} onClose={() => setModal(null)} onCombine={(parentId, materialIds) => {
+        const result = combineOrb(state, parentId, materialIds);
+        if (!result.accepted) setNotice(result.reason === 'insufficient-gold' ? '合成に必要なGoldが足りません' : '合成条件を満たしていません');
+        else { commit(result.state, 'オーブをランクアップしました'); setModal(null); }
       }} />}
       {modal === 'job' && <JobModal state={state} onClose={() => setModal(null)} onChange={(jobId) => {
         const result = changeJob(state, jobId);
@@ -224,7 +255,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
       <button className="fight-button" onClick={props.onFight} disabled={!cooldown.ready}>
         {cooldown.ready ? <><b>⚔ 戦闘する</b><span>1戦だけ挑む</span></> : <><b>{cooldown.remainingSec}秒</b><span>次の戦闘まで</span></>}
       </button>
-      {!cooldown.ready && <button className="skip-button" onClick={props.onSkip}>💎 {skipCost} で待ち時間をスキップ</button>}
+      {!cooldown.ready && canSkipBattleCooldown(state) && <button className="skip-button" onClick={props.onSkip}>💎 {skipCost} で待ち時間をスキップ</button>}
       <button className={`rare-button ${state.gameData.rareGuaranteeActive ? 'active' : ''}`} onClick={props.onRare} disabled={state.gameData.rareGuaranteeActive}>💎10 レア確定</button>
     </div>
 
@@ -243,7 +274,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
   </section>;
 }
 
-function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onPetToggle: (enemyId: string, active: boolean) => void }>) {
+function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void }>) {
   const { state } = props;
   const inventory = Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active);
   return <section className="page-section equipment-page">
@@ -272,7 +303,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
           <em>{offer.price.toLocaleString()} G</em>
         </button>)}
       </div>
-    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} /> : <PetView state={state} onToggle={props.onPetToggle} />}
+    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : <PetView state={state} onToggle={props.onPetToggle} />}
   </section>;
 }
 
@@ -371,11 +402,32 @@ function EquippedChip(props: Readonly<{ state: MinuteVanguardState; slot: 'weapo
 function OwnedItemRow(props: Readonly<{ state: MinuteVanguardState; itemId: string; data: EquipmentData; onClick: () => void }>) {
   const item = props.state.gameData.inventory[props.itemId]!;
   const equipped = Object.values(props.state.gameData.loadout.equipped).includes(props.itemId);
-  return <button className={`owned-item-row rarity-${props.data.rarity}`} onClick={props.onClick}><span className="equipment-icon">{props.data.kind === 'weapon' ? '⚔' : props.data.kind === 'armor' ? '🛡' : '🔮'}</span><span><strong>{itemDefinitions[item.definitionId]?.displayName} {props.data.upgradeRank > 0 ? `+${props.data.upgradeRank}` : ''}</strong><small>{props.data.kind === 'orb' ? `${props.data.orbRank} · 合計 ${sumPercent(props.data)}%` : formatFlatStats(props.data.flatStats)}</small></span>{equipped && <em>装備中</em>}</button>;
+  return <button className={`owned-item-row rarity-${props.data.rarity}`} onClick={props.onClick}><span className="equipment-icon">{props.data.kind === 'weapon' ? '⚔' : props.data.kind === 'armor' ? '🛡' : '🔮'}</span><span><strong>{props.data.favorite ? '★ ' : ''}{props.data.locked ? '🔒 ' : ''}{itemDefinitions[item.definitionId]?.displayName} {props.data.upgradeRank > 0 ? `+${props.data.upgradeRank}` : ''}</strong><small>{props.data.kind === 'orb' ? `${props.data.orbRank} · 合計 ${sumPercent(props.data)}%` : formatFlatStats(props.data.flatStats)}</small></span>{equipped && <em>装備中</em>}</button>;
 }
 
-function OrbView(props: Readonly<{ state: MinuteVanguardState; inventory: readonly { instanceId: string; definitionId: string; quantity: number; data?: EquipmentData }[]; onSelect: (id: string) => void; onDraw: (count: 1 | 10) => void }>) {
-  return <div className="orb-view"><div className="orb-list">{props.inventory.length === 0 && <p className="empty-state">オーブはモンスターから低確率で落ちるほか、ジェムでも引けます。</p>}{props.inventory.map((item) => item.data && <OwnedItemRow key={item.instanceId} state={props.state} itemId={item.instanceId} data={item.data} onClick={() => props.onSelect(item.instanceId)} />)}</div><div className="orb-bottom-actions"><button onClick={() => props.onDraw(1)}>1回<br/><b>💎100</b></button><button onClick={() => props.onDraw(10)}>10連<br/><b>💎1,000</b></button><button disabled>合成する</button></div></div>;
+function OrbView(props: Readonly<{ state: MinuteVanguardState; inventory: readonly { instanceId: string; definitionId: string; quantity: number; data?: EquipmentData }[]; onSelect: (id: string) => void; onDraw: (count: 1 | 10) => void; onExpand: () => void; onCombine: () => void }>) {
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const sorted = [...props.inventory]
+    .filter((item) => !favoriteOnly || item.data?.favorite === true)
+    .sort((left, right) => Number(right.data?.favorite === true) - Number(left.data?.favorite === true));
+  const used = orbInventoryCount(props.state);
+  const free = orbFreeSlots(props.state);
+  return <div className="orb-view">
+    <div className="orb-toolbar">
+      <div><strong>{used} / {props.state.gameData.orbCapacity}</strong><small>オーブ所持枠</small></div>
+      <button className={favoriteOnly ? 'active' : ''} onClick={() => setFavoriteOnly((value) => !value)}>★ お気に入り</button>
+      <button onClick={props.onExpand}>＋1枠 💎100</button>
+    </div>
+    <div className="orb-list">
+      {sorted.length === 0 && <p className="empty-state">{favoriteOnly ? 'お気に入りのオーブはありません。' : 'オーブはモンスターから低確率で落ちるほか、ジェムでも引けます。'}</p>}
+      {sorted.map((item) => item.data && <OwnedItemRow key={item.instanceId} state={props.state} itemId={item.instanceId} data={item.data} onClick={() => props.onSelect(item.instanceId)} />)}
+    </div>
+    <div className="orb-bottom-actions">
+      <button onClick={() => props.onDraw(1)} disabled={free < 1}>1回<br/><b>💎100</b></button>
+      <button onClick={() => props.onDraw(10)} disabled={free < 10}>10連<br/><b>💎1,000</b></button>
+      <button onClick={props.onCombine}>合成する</button>
+    </div>
+  </div>;
 }
 
 function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (enemyId: string, active: boolean) => void }>) {
@@ -393,13 +445,55 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (enemyI
   </div>;
 }
 
-function ItemModal(props: Readonly<{ state: MinuteVanguardState; itemId: string; data: EquipmentData; onClose: () => void; onEquip: () => void; onUpgrade: () => void; onDiscard: () => void }>) {
+function ItemModal(props: Readonly<{ state: MinuteVanguardState; itemId: string; data: EquipmentData; onClose: () => void; onEquip: () => void; onUpgrade: () => void; onFavorite: () => void; onLock: () => void; onReroll: (lockedStats: readonly StatKey[]) => void; onDiscard: () => void }>) {
+  const [lockedStats, setLockedStats] = useState<StatKey[]>([]);
   const item = props.state.gameData.inventory[props.itemId]!;
   const equipped = Object.values(props.state.gameData.loadout.equipped).includes(props.itemId);
+  const toggleRerollLock = (key: StatKey) => setLockedStats((current) => {
+    if (current.includes(key)) return current.filter((candidate) => candidate !== key);
+    if (current.length >= 3) return current;
+    return [...current, key];
+  });
+  const protectedOrb = props.data.kind === 'orb' && (props.data.favorite === true || props.data.locked === true);
   return <ModalFrame title={itemDefinitions[item.definitionId]?.displayName ?? '装備'} onClose={props.onClose}>
     <div className={`item-detail-hero rarity-${props.data.rarity}`}><span>{props.data.kind === 'weapon' ? '⚔' : props.data.kind === 'armor' ? '🛡' : '🔮'}</span><strong>{props.data.kind === 'orb' ? `${props.data.orbRank} オーブ` : props.data.rarity.toUpperCase()}</strong></div>
-    {props.data.kind === 'orb' ? <><StatTable data={props.data.percentStats ?? {}} suffix="%" />{props.data.effectId && <p className="effect-line">特殊効果：{effectLabel(props.data.effectId)} +{props.data.effectValue}{props.data.effectId === 'cooldown' ? '秒短縮' : '%'}</p>}</> : <StatTable data={props.data.flatStats} prefix="+" />}
-    <div className="modal-actions"><button className="modal-primary" onClick={props.onEquip}>{equipped ? '装備中' : '装備する'}</button>{props.data.kind !== 'orb' && <button onClick={props.onUpgrade} disabled={props.data.upgradeRank >= 5}>強化する +{props.data.upgradeRank} → +{Math.min(5, props.data.upgradeRank + 1)}</button>}<button className="danger-button" onClick={props.onDiscard}>破棄する</button></div>
+    {props.data.kind === 'orb' ? <>
+      <div className="orb-protection-actions"><button className={props.data.favorite ? 'active' : ''} onClick={props.onFavorite}>{props.data.favorite ? '★ お気に入り中' : '☆ お気に入り'}</button><button className={props.data.locked ? 'active' : ''} onClick={props.onLock}>{props.data.locked ? '🔒 ロック中' : '🔓 ロック'}</button></div>
+      <StatTable data={props.data.percentStats ?? {}} suffix="%" />
+      {props.data.effectId && <p className="effect-line">特殊効果：{effectLabel(props.data.effectId)} {formatEffectValue(props.data)}</p>}
+      <div className="orb-reroll-panel"><div><strong>ステータス再抽選</strong><small>合計 {sumPercent(props.data)}% と特殊効果は維持。残す能力を3つまで固定できます。</small></div><div className="reroll-locks">{(Object.keys(STAT_LABELS) as StatKey[]).map((key) => <button key={key} className={lockedStats.includes(key) ? 'active' : ''} onClick={() => toggleRerollLock(key)}>{lockedStats.includes(key) ? '🔒' : '○'} {STAT_LABELS[key]} {props.data.percentStats?.[key] ?? 0}%</button>)}</div><button className="reroll-button" onClick={() => props.onReroll(lockedStats)}>💎{orbRerollCost(lockedStats)} で再抽選</button></div>
+    </> : <StatTable data={props.data.flatStats} prefix="+" />}
+    <div className="modal-actions"><button className="modal-primary" onClick={props.onEquip}>{equipped ? '装備中' : '装備する'}</button>{props.data.kind !== 'orb' && <button onClick={props.onUpgrade} disabled={props.data.upgradeRank >= 5}>強化する +{props.data.upgradeRank} → +{Math.min(5, props.data.upgradeRank + 1)}</button>}<button className="danger-button" onClick={props.onDiscard} disabled={protectedOrb}>{protectedOrb ? '保護中のため破棄不可' : '破棄する'}</button></div>
+  </ModalFrame>;
+}
+
+function OrbCombineModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onCombine: (parentId: string, materialIds: readonly string[]) => void }>) {
+  const [parentId, setParentId] = useState<string | null>(null);
+  const [materialIds, setMaterialIds] = useState<string[]>([]);
+  const orbs = Object.values(props.state.gameData.inventory).filter((item) => item.data?.kind === 'orb' && item.data.orbRank !== undefined);
+  const parent = parentId === null ? undefined : props.state.gameData.inventory[parentId];
+  const parentRank = parent?.data?.orbRank;
+  const cost = parentRank === undefined ? null : orbCombineCost(parentRank);
+  const equippedOrbId = props.state.gameData.loadout.equipped.orb;
+  const materialCandidates = parentRank === undefined ? [] : orbs.filter((item) => item.instanceId !== parentId && item.data?.orbRank === parentRank);
+  const matchingEffectCount = parent?.data?.effectId === undefined ? 0 : materialIds.filter((id) => props.state.gameData.inventory[id]?.data?.effectId === parent.data?.effectId).length;
+  const chooseParent = (id: string) => { setParentId(id); setMaterialIds([]); };
+  const toggleMaterial = (id: string) => setMaterialIds((current) => current.includes(id) ? current.filter((candidate) => candidate !== id) : current.length < 4 ? [...current, id] : current);
+  return <ModalFrame title="オーブ合成" onClose={props.onClose}>
+    <p className="modal-description">親1個＋同ランク素材4個。失敗なしで1ランク上昇し、親のID・特殊効果・装備状態は維持されます。ステータス配分は新ランクで引き直されます。</p>
+    <h3 className="combine-heading">1. 合成先を選ぶ</h3>
+    <div className="combine-orb-list">{orbs.map((item) => item.data && <button key={item.instanceId} className={parentId === item.instanceId ? 'active' : ''} disabled={item.data.orbRank === 'SSS'} onClick={() => chooseParent(item.instanceId)}><span>{item.data.favorite ? '★' : ''}{item.data.locked ? '🔒' : ''} 🔮</span><strong>{item.data.orbRank} · {sumPercent(item.data)}%</strong><small>{item.data.effectId ? `${effectLabel(item.data.effectId)} ${formatEffectValue(item.data)}` : '特殊効果なし'}{item.instanceId === equippedOrbId ? ' · 装備中' : ''}</small></button>)}</div>
+    {parent !== undefined && parent.data !== undefined && <>
+      <div className="combine-summary"><span>次ランク</span><strong>{nextOrbRank(parent.data.orbRank)}</strong><span>必要Gold</span><strong>{cost?.toLocaleString() ?? 'MAX'} G</strong><span>効果強化率</span><strong>{matchingEffectCount * 20}%</strong></div>
+      <h3 className="combine-heading">2. 素材を4個選ぶ <small>{materialIds.length}/4</small></h3>
+      <div className="combine-orb-list materials">{materialCandidates.map((item) => {
+        const protectedMaterial = item.instanceId === equippedOrbId || item.data?.favorite === true || item.data?.locked === true;
+        const selected = materialIds.includes(item.instanceId);
+        return item.data && <button key={item.instanceId} className={selected ? 'active' : ''} disabled={protectedMaterial} onClick={() => toggleMaterial(item.instanceId)}><span>{selected ? `${materialIds.indexOf(item.instanceId) + 1}` : protectedMaterial ? '🔒' : '○'}</span><strong>{item.data.orbRank} · {sumPercent(item.data)}%</strong><small>{item.data.effectId ? `${effectLabel(item.data.effectId)} ${formatEffectValue(item.data)}` : '特殊効果なし'}{protectedMaterial ? ' · 素材不可' : ''}</small></button>;
+      })}</div>
+      {materialCandidates.length < 4 && <p className="empty-state">同ランクの素材オーブが4個必要です。</p>}
+      <button className="modal-primary combine-confirm" disabled={materialIds.length !== 4 || cost === null || goldBalance(props.state) < (cost ?? Infinity)} onClick={() => parentId && props.onCombine(parentId, materialIds)}>合成する {cost !== null ? `${cost.toLocaleString()} G` : ''}</button>
+    </>}
   </ModalFrame>;
 }
 
@@ -446,6 +540,19 @@ function formatFlatStats(stats: Partial<Record<StatKey, number>>): string {
 
 function sumPercent(data: EquipmentData): number {
   return Object.values(data.percentStats ?? {}).reduce((sum, value) => sum + (value ?? 0), 0);
+}
+
+function formatEffectValue(data: EquipmentData): string {
+  if (data.effectValue === undefined || data.effectId === undefined) return '';
+  if (data.effectId === 'cooldown') return `-${data.effectValue}秒`;
+  if (data.effectId === 'drawExp') return '2倍';
+  return `+${data.effectValue}%`;
+}
+
+function nextOrbRank(rank: EquipmentData['orbRank']): string {
+  if (rank === undefined) return '-';
+  const index = orbRanks.indexOf(rank);
+  return orbRanks[index + 1] ?? 'MAX';
 }
 
 function effectLabel(effectId: string): string {

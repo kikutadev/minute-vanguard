@@ -49,6 +49,7 @@ import type {
   LevelGrowthResult,
   MinuteVanguardState,
   MonsterRarity,
+  OrbEffectId,
   OrbRank,
   PermanentStatReward,
   StatKey,
@@ -60,6 +61,20 @@ const MAX_BATTLE_TURNS = 20;
 const BEGINNER_FAST_KILLS = 10;
 const STAT_KEYS: readonly StatKey[] = ['hp', 'attack', 'defense', 'magicAttack', 'magicDefense', 'luck'];
 const BASE_STATS: StatValues = { hp: 100, attack: 12, defense: 8, magicAttack: 10, magicDefense: 8, luck: 10 };
+const ORB_BASE_CAPACITY = 10;
+const ORB_CAPACITY_EXPANSION_COST = 100;
+const ORB_REROLL_COSTS = [50, 100, 200, 400] as const;
+const ORB_COMBINE_COST_BY_TARGET_RANK: Readonly<Partial<Record<OrbRank, number>>> = {
+  E: 30_000, D: 100_000, C: 300_000, B: 1_000_000, A: 3_000_000, S: 10_000_000, SS: 30_000_000, SSS: 100_000_000,
+};
+const KNOWN_ORB_EFFECT_LADDERS: Readonly<Partial<Record<OrbEffectId, readonly number[]>>> = {
+  gold: [3, 6, 9, 12, 15],
+  exp: [3, 6, 9, 12, 15],
+  greatGrowth: [3, 6, 9, 12, 15],
+  critical: [5, 10, 15, 20, 25],
+  evasion: [3, 6, 9, 12, 15],
+  cooldown: [1, 2, 3, 4, 5],
+};
 const currencyById = new Map(currencyDefinitions.map((definition) => [definition.id, definition]));
 
 export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): MinuteVanguardState {
@@ -126,6 +141,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       },
       ownedPetEnemyIds: [],
       activePetEnemyIds: [],
+      orbCapacity: ORB_BASE_CAPACITY,
       missionProgress: { dayKey: jstDayKey(nowMs), battles: 0, wins: 0, upgrades: 0, claimed: [] },
     },
   };
@@ -133,7 +149,15 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
 
 /** Old public prototype saves are intentionally upgraded into the richer v1 schema. */
 export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.now()): MinuteVanguardState {
-  if (state.schemaVersion === SCHEMA_VERSION && state.definitionVersion === definitionVersion) return state;
+  if (state.schemaVersion === SCHEMA_VERSION && state.definitionVersion === definitionVersion) {
+    return {
+      ...state,
+      gameData: {
+        ...state.gameData,
+        orbCapacity: state.gameData.orbCapacity ?? ORB_BASE_CAPACITY,
+      },
+    };
+  }
   const next = createInitialState(nowMs, state.rngStreams[ids.rng.encounter]?.state ?? 0x60b0_2026);
   return {
     ...next,
@@ -186,11 +210,17 @@ export function cooldownSkipCost(state: MinuteVanguardState): number {
   return remaining <= 0 ? 0 : Math.min(6, Math.max(1, Math.ceil(remaining / 10)));
 }
 
+/** The public reference intentionally hides skip controls during the 5-second beginner cadence. */
+export function canSkipBattleCooldown(state: MinuteVanguardState): boolean {
+  const preview = battleCooldown(state);
+  return !preview.ready && effectiveBattleCooldownSec(state) > 5;
+}
+
 export function skipBattleCooldown(
   state: MinuteVanguardState,
 ): CommandResult<MinuteVanguardState, 'already-ready' | 'insufficient-gems'> {
   const preview = battleCooldown(state);
-  if (preview.ready) return reject(state, 'already-ready');
+  if (preview.ready || !canSkipBattleCooldown(state)) return reject(state, 'already-ready');
   const cost = cooldownSkipCost(state);
   const spend = spendCurrency(state, ids.currency.gem, cost, 'battle.cooldown-skip');
   if (!spend.accepted) return reject(state, 'insufficient-gems');
@@ -407,7 +437,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     }
     const orbRoll = draw(nextState, ids.rng.loot); nextState = orbRoll.state;
     const orbRate = enemy.orbDropChance * (nextState.gameData.permanentUpgrades.orbDropMultiplier ? 1.5 : 1) * rewardMultiplier;
-    if (orbRoll.value < orbRate) {
+    if (orbRoll.value < orbRate && orbFreeSlots(nextState) > 0) {
       const dropped = createOrb(nextState, enemy.rarity, false);
       nextState = dropped.state;
       droppedOrbInstanceId = dropped.itemInstanceId;
@@ -607,8 +637,10 @@ export function upgradeEquippedItem(
 export function discardItem(
   state: MinuteVanguardState,
   itemInstanceId: string,
-): CommandResult<MinuteVanguardState, 'unknown-item'> {
-  if (state.gameData.inventory[itemInstanceId] === undefined) return reject(state, 'unknown-item');
+): CommandResult<MinuteVanguardState, 'unknown-item' | 'protected-item'> {
+  const item = state.gameData.inventory[itemInstanceId];
+  if (item === undefined) return reject(state, 'unknown-item');
+  if (item.data?.kind === 'orb' && (item.data.favorite === true || item.data.locked === true)) return reject(state, 'protected-item');
   let loadout = state.gameData.loadout;
   for (const [slotId, equippedId] of Object.entries(loadout.equipped)) {
     if (equippedId !== itemInstanceId) continue;
@@ -621,10 +653,19 @@ export function discardItem(
   return accept(nextState, [event(nextState, 'itemDiscarded', itemInstanceId)]);
 }
 
+export function orbInventoryCount(state: MinuteVanguardState): number {
+  return Object.values(state.gameData.inventory).filter((item) => item.data?.kind === 'orb').length;
+}
+
+export function orbFreeSlots(state: MinuteVanguardState): number {
+  return Math.max(0, state.gameData.orbCapacity - orbInventoryCount(state));
+}
+
 export function drawOrb(
   state: MinuteVanguardState,
   count: 1 | 10,
-): CommandResult<MinuteVanguardState, 'insufficient-gems'> {
+): CommandResult<MinuteVanguardState, 'insufficient-gems' | 'insufficient-orb-slots'> {
+  if (orbFreeSlots(state) < count) return reject(state, 'insufficient-orb-slots');
   const spend = spendCurrency(state, ids.currency.gem, count * 100, `orb.gacha.${count}`);
   if (!spend.accepted) return reject(state, 'insufficient-gems');
   let nextState = spend.state;
@@ -635,6 +676,148 @@ export function drawOrb(
     nextState = generated.state;
   }
   return accept(nextState, [event(nextState, 'orbGachaResolved', `${state.gameData.totalBattles}:${count}`, { count })]);
+}
+
+export function expandOrbCapacity(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'insufficient-gems'> {
+  const spend = spendCurrency(state, ids.currency.gem, ORB_CAPACITY_EXPANSION_COST, 'orb.capacity.expand');
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const nextState: MinuteVanguardState = {
+    ...spend.state,
+    gameData: { ...spend.state.gameData, orbCapacity: spend.state.gameData.orbCapacity + 1 },
+  };
+  return accept(nextState, [event(nextState, 'orbCapacityExpanded', `${nextState.gameData.orbCapacity}`, { cost: ORB_CAPACITY_EXPANSION_COST })]);
+}
+
+export function toggleOrbFavorite(
+  state: MinuteVanguardState,
+  itemInstanceId: string,
+): CommandResult<MinuteVanguardState, 'unknown-orb'> {
+  const item = state.gameData.inventory[itemInstanceId];
+  if (item?.data?.kind !== 'orb') return reject(state, 'unknown-orb');
+  const data: EquipmentData = { ...item.data, favorite: !(item.data.favorite ?? false) };
+  const inventory: InventoryState<EquipmentData> = { ...state.gameData.inventory, [itemInstanceId]: { ...item, data } };
+  const nextState: MinuteVanguardState = { ...state, gameData: { ...state.gameData, inventory } };
+  return accept(nextState, [event(nextState, 'orbFavoriteToggled', itemInstanceId, { favorite: data.favorite })]);
+}
+
+export function toggleOrbLock(
+  state: MinuteVanguardState,
+  itemInstanceId: string,
+): CommandResult<MinuteVanguardState, 'unknown-orb'> {
+  const item = state.gameData.inventory[itemInstanceId];
+  if (item?.data?.kind !== 'orb') return reject(state, 'unknown-orb');
+  const data: EquipmentData = { ...item.data, locked: !(item.data.locked ?? false) };
+  const inventory: InventoryState<EquipmentData> = { ...state.gameData.inventory, [itemInstanceId]: { ...item, data } };
+  const nextState: MinuteVanguardState = { ...state, gameData: { ...state.gameData, inventory } };
+  return accept(nextState, [event(nextState, 'orbLockToggled', itemInstanceId, { locked: data.locked })]);
+}
+
+export function orbRerollCost(lockedStats: readonly StatKey[]): number {
+  const uniqueCount = new Set(lockedStats).size;
+  return ORB_REROLL_COSTS[Math.min(3, uniqueCount)] ?? ORB_REROLL_COSTS[3];
+}
+
+export function rerollOrbStats(
+  state: MinuteVanguardState,
+  itemInstanceId: string,
+  lockedStats: readonly StatKey[],
+): CommandResult<MinuteVanguardState, 'unknown-orb' | 'too-many-locked-stats' | 'invalid-locked-stat' | 'insufficient-gems'> {
+  const item = state.gameData.inventory[itemInstanceId];
+  if (item?.data?.kind !== 'orb' || item.data.orbRank === undefined || item.data.percentStats === undefined) return reject(state, 'unknown-orb');
+  const uniqueLocked = [...new Set(lockedStats)];
+  if (uniqueLocked.length > 3) return reject(state, 'too-many-locked-stats');
+  if (uniqueLocked.some((key) => !STAT_KEYS.includes(key))) return reject(state, 'invalid-locked-stat');
+  const cost = orbRerollCost(uniqueLocked);
+  const spend = spendCurrency(state, ids.currency.gem, cost, `orb.reroll.${itemInstanceId}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+
+  const totalPercent = STAT_KEYS.reduce((sum, key) => sum + (item.data?.percentStats?.[key] ?? 0), 0);
+  const rerolled = rerollOrbAllocation(spend.state, totalPercent, item.data.percentStats, uniqueLocked);
+  const data: EquipmentData = { ...item.data, percentStats: rerolled.percentStats };
+  const inventory: InventoryState<EquipmentData> = {
+    ...rerolled.state.gameData.inventory,
+    [itemInstanceId]: { ...item, data },
+  };
+  const nextState: MinuteVanguardState = { ...rerolled.state, gameData: { ...rerolled.state.gameData, inventory } };
+  return accept(nextState, [event(nextState, 'orbStatsRerolled', itemInstanceId, { cost, lockedStats: uniqueLocked })]);
+}
+
+export function orbCombineCost(parentRank: OrbRank): number | null {
+  const currentIndex = orbRanks.indexOf(parentRank);
+  if (currentIndex < 0 || currentIndex >= orbRanks.length - 1) return null;
+  const target = orbRanks[currentIndex + 1];
+  return target === undefined ? null : ORB_COMBINE_COST_BY_TARGET_RANK[target] ?? null;
+}
+
+export function combineOrb(
+  state: MinuteVanguardState,
+  parentId: string,
+  materialIds: readonly string[],
+): CommandResult<MinuteVanguardState, 'unknown-parent' | 'max-rank' | 'invalid-material-count' | 'invalid-material' | 'protected-material' | 'insufficient-gold'> {
+  const parent = state.gameData.inventory[parentId];
+  if (parent?.data?.kind !== 'orb' || parent.data.orbRank === undefined) return reject(state, 'unknown-parent');
+  const parentRank = parent.data.orbRank;
+  const rankIndex = orbRanks.indexOf(parentRank);
+  if (rankIndex >= orbRanks.length - 1) return reject(state, 'max-rank');
+  const uniqueMaterialIds = [...new Set(materialIds)];
+  if (uniqueMaterialIds.length !== 4 || uniqueMaterialIds.includes(parentId)) return reject(state, 'invalid-material-count');
+
+  const equippedOrbId = state.gameData.loadout.equipped.orb;
+  const materials = uniqueMaterialIds.map((id) => state.gameData.inventory[id]);
+  if (materials.some((item) => item?.data?.kind !== 'orb' || item.data.orbRank !== parentRank)) return reject(state, 'invalid-material');
+  if (materials.some((item) => item === undefined || item.data === undefined || item.data.favorite === true || item.data.locked === true || item.instanceId === equippedOrbId)) {
+    return reject(state, 'protected-material');
+  }
+
+  const targetRank = orbRanks[rankIndex + 1];
+  if (targetRank === undefined) return reject(state, 'max-rank');
+  const cost = ORB_COMBINE_COST_BY_TARGET_RANK[targetRank];
+  if (cost === undefined) return reject(state, 'max-rank');
+  const spend = spendCurrency(state, ids.currency.gold, cost, `orb.combine.${parentRank}.${targetRank}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gold');
+
+  let nextState = spend.state;
+  const rolled = rollOrbStatsForRank(nextState, targetRank);
+  nextState = rolled.state;
+  const parentEffectId = parent.data.effectId;
+  let effectLevel = parent.data.effectLevel ?? inferOrbEffectLevel(parentEffectId, parent.data.effectValue);
+  let effectValue = parent.data.effectValue;
+  let effectUpgraded = false;
+  const matchingEffectCount = parentEffectId === undefined
+    ? 0
+    : materials.filter((item) => item?.data?.effectId === parentEffectId).length;
+  const ladder = parentEffectId === undefined ? undefined : KNOWN_ORB_EFFECT_LADDERS[parentEffectId];
+  if (matchingEffectCount > 0 && ladder !== undefined && effectLevel < ladder.length) {
+    const roll = draw(nextState, ids.rng.loot);
+    nextState = roll.state;
+    if (roll.value < Math.min(0.8, matchingEffectCount * 0.2)) {
+      effectLevel += 1;
+      effectValue = ladder[effectLevel - 1] ?? effectValue;
+      effectUpgraded = true;
+    }
+  }
+
+  let inventory: InventoryState<EquipmentData> = nextState.gameData.inventory;
+  for (const materialId of uniqueMaterialIds) {
+    const removed = removeItemInstance(inventory, materialId);
+    if (!removed.accepted) throw new Error(`Validated orb material unexpectedly disappeared: ${materialId}`);
+    inventory = removed.inventory;
+  }
+  const currentParent = inventory[parentId];
+  if (currentParent?.data === undefined) throw new Error(`Validated orb parent unexpectedly disappeared: ${parentId}`);
+  const parentData: EquipmentData = {
+    ...currentParent.data,
+    orbRank: targetRank,
+    percentStats: rolled.percentStats,
+    ...(currentParent.data.effectId === undefined ? {} : { effectLevel, effectValue }),
+  };
+  inventory = { ...inventory, [parentId]: { ...currentParent, data: parentData } };
+  const combinedState: MinuteVanguardState = { ...nextState, gameData: { ...nextState.gameData, inventory } };
+  return accept(combinedState, [event(combinedState, 'orbCombined', parentId, {
+    fromRank: parentRank, targetRank, cost, materialIds: uniqueMaterialIds, matchingEffectCount, effectUpgraded,
+  })]);
 }
 
 export function buyPermanentUpgrade(
@@ -865,39 +1048,95 @@ function createOrb(state: MinuteVanguardState, sourceRarity: MonsterRarity, forc
   const minimumIndex = minimumRank === undefined ? 0 : orbRanks.indexOf(minimumRank);
   const finalRankIndex = Math.max(rankIndex, minimumIndex);
   const rank = orbRanks[finalRankIndex] ?? 'F';
-  const range = orbPercentByRank[rank];
-  const totalRoll = draw(rankRoll.state, ids.rng.loot);
-  const totalPercent = Math.round(range[0] + totalRoll.value * (range[1] - range[0]));
-  let nextState = totalRoll.state;
-  const weights: number[] = [];
-  let weightTotal = 0;
-  for (let index = 0; index < STAT_KEYS.length; index += 1) {
-    const roll = draw(nextState, ids.rng.loot); nextState = roll.state;
-    const weight = 0.15 + roll.value;
-    weights.push(weight); weightTotal += weight;
-  }
-  const percentStats = zeroStats();
-  let allocated = 0;
-  STAT_KEYS.forEach((key, index) => {
-    const value = index === STAT_KEYS.length - 1 ? totalPercent - allocated : Math.max(0, Math.round(totalPercent * (weights[index] ?? 0) / weightTotal));
-    percentStats[key] = value; allocated += value;
-  });
+  const rolled = rollOrbStatsForRank(rankRoll.state, rank);
+  let nextState = rolled.state;
   const effectRoll = draw(nextState, ids.rng.loot); nextState = effectRoll.state;
-  let effectId: string | undefined;
+  let effectId: OrbEffectId | undefined;
   let effectValue: number | undefined;
+  let effectLevel: number | undefined;
   if (forceEffect || effectRoll.value < 0.1) {
-    const effectNames = ['gemDrop', 'goldProtection', 'gold', 'exp', 'drawExp', 'regen', 'greatGrowth', 'critical', 'evasion', 'cooldown'] as const;
+    const effectNames: readonly OrbEffectId[] = ['gemDrop', 'goldProtection', 'gold', 'exp', 'drawExp', 'regen', 'greatGrowth', 'critical', 'evasion', 'cooldown'];
     const pick = draw(nextState, ids.rng.loot); nextState = pick.state;
     effectId = effectNames[Math.min(effectNames.length - 1, Math.floor(pick.value * effectNames.length))]!;
-    effectValue = effectId === 'cooldown' ? 1 + Math.floor(finalRankIndex / 3) : Math.max(1, 3 + finalRankIndex * 2);
+    const ladder = KNOWN_ORB_EFFECT_LADDERS[effectId];
+    if (ladder !== undefined) {
+      // The public docs define the value ladders, but not their rank-by-rank distribution.
+      effectLevel = Math.min(effectId === 'cooldown' ? 3 : ladder.length, 1 + Math.floor(finalRankIndex / 2));
+      effectValue = ladder[effectLevel - 1] ?? ladder[0];
+    } else {
+      // Keep non-published ladders on their existing benchmark values rather than inventing reference values.
+      effectLevel = 1;
+      effectValue = effectId === 'drawExp' ? 1 : Math.max(1, 3 + finalRankIndex * 2);
+    }
   }
   const data: EquipmentData = {
-    kind: 'orb', rarity: sourceRarity, upgradeRank: 0, flatStats: {}, percentStats, orbRank: rank,
-    ...(effectId === undefined || effectValue === undefined ? {} : { effectId, effectValue }), source: 'orb',
+    kind: 'orb', rarity: sourceRarity, upgradeRank: 0, flatStats: {}, percentStats: rolled.percentStats, orbRank: rank,
+    ...(effectId === undefined || effectValue === undefined || effectLevel === undefined ? {} : { effectId, effectValue, effectLevel }),
+    favorite: false, locked: false, source: 'orb',
   };
   return grantItem(nextState, ids.item.orb, data);
 }
 
+function rollOrbStatsForRank(
+  state: MinuteVanguardState,
+  rank: OrbRank,
+): Readonly<{ state: MinuteVanguardState; percentStats: StatValues }> {
+  const range = orbPercentByRank[rank];
+  const totalRoll = draw(state, ids.rng.loot);
+  const totalPercent = Math.round(range[0] + totalRoll.value * (range[1] - range[0]));
+  return rerollOrbAllocation(totalRoll.state, totalPercent, {}, []);
+}
+
+function rerollOrbAllocation(
+  state: MinuteVanguardState,
+  totalPercent: number,
+  currentStats: Partial<StatValues>,
+  lockedStats: readonly StatKey[],
+): Readonly<{ state: MinuteVanguardState; percentStats: StatValues }> {
+  const locked = new Set(lockedStats);
+  const percentStats = zeroStats();
+  let lockedTotal = 0;
+  for (const key of STAT_KEYS) {
+    if (!locked.has(key)) continue;
+    const value = Math.max(0, currentStats[key] ?? 0);
+    percentStats[key] = value;
+    lockedTotal += value;
+  }
+  const remainingTotal = Math.max(0, totalPercent - lockedTotal);
+  const openKeys = STAT_KEYS.filter((key) => !locked.has(key));
+  let nextState = state;
+  const weights: number[] = [];
+  let weightTotal = 0;
+  for (let index = 0; index < openKeys.length; index += 1) {
+    const roll = draw(nextState, ids.rng.loot);
+    nextState = roll.state;
+    const weight = 0.15 + roll.value;
+    weights.push(weight);
+    weightTotal += weight;
+  }
+  let allocated = 0;
+  openKeys.forEach((key, index) => {
+    const value = index === openKeys.length - 1
+      ? remainingTotal - allocated
+      : Math.max(0, Math.floor(remainingTotal * (weights[index] ?? 0) / weightTotal));
+    percentStats[key] = value;
+    allocated += value;
+  });
+  return { state: nextState, percentStats };
+}
+
+function inferOrbEffectLevel(effectId: OrbEffectId | undefined, effectValue: number | undefined): number {
+  if (effectId === undefined || effectValue === undefined) return 0;
+  const ladder = KNOWN_ORB_EFFECT_LADDERS[effectId];
+  if (ladder === undefined) return 1;
+  const exact = ladder.indexOf(effectValue);
+  if (exact >= 0) return exact + 1;
+  let nearest = 0;
+  for (let index = 1; index < ladder.length; index += 1) {
+    if (Math.abs((ladder[index] ?? 0) - effectValue) < Math.abs((ladder[nearest] ?? 0) - effectValue)) nearest = index;
+  }
+  return nearest + 1;
+}
 function grantItem(state: MinuteVanguardState, definitionId: string, data: EquipmentData): Readonly<{ state: MinuteVanguardState; itemInstanceId: string }> {
   const itemInstanceId = `${definitionId}:${state.gameData.nextItemSequence}`;
   const item: ItemInstanceState<EquipmentData> = { instanceId: itemInstanceId, definitionId, quantity: 1, data };

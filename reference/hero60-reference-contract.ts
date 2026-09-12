@@ -1,0 +1,80 @@
+/**
+ * Public-reference facts observed from hero60rpg.com guide / patch notes.
+ *
+ * This is deliberately a compact behavioral contract, not copied product source
+ * or content. Minute Vanguard remains an original product; these values exist
+ * only to prevent accidental drift in the benchmark mechanics we intentionally
+ * study.
+ */
+export const hero60Reference = {
+  source: {
+    guide: 'https://hero60rpg.com/guide',
+    patchnotes: 'https://hero60rpg.com/patchnotes',
+  },
+  battle: {
+    normalCooldownSec: 60,
+    beginnerCooldownSec: 5,
+    beginnerKillCount: 10,
+    beginnerDefeatCooldownSec: 60,
+    permanentCooldownSec: 50,
+    rushCooldownSec: 10,
+    maxTurns: 20,
+    mutationChance: 0.01,
+    mutationRewardMultiplier: 3,
+    defeatGoldLossRatio: 0.5,
+    defeatHp: 1,
+    drawExpRatio: 0.05,
+    boostedDrawExpRatio: 0.10,
+    rareGuaranteeGemCost: 10,
+    rareGuaranteeWeights: [0.67, 0.24, 0.067, 0.02] as const,
+    streakMultipliers: { two: 1.2, threeToFour: 1.5, fivePlus: 2 },
+    jackpot: { x2: 0.08, x3: 0.03, x5: 0.01, x10: 0.003 },
+    permanentStatChance: 0.01,
+  },
+  progression: {
+    stats: ['hp', 'attack', 'defense', 'magicAttack', 'magicDefense', 'luck'] as const,
+    growthVarianceMin: 0.7,
+    growthVarianceMax: 1.3,
+    greatGrowthChance: 0.05,
+    greatGrowthMultiplier: 2,
+    jobChangeLevel: 30,
+    jobs: 9,
+  },
+  orb: {
+    ranks: ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'] as const,
+    gachaSingleCost: 100,
+    gachaTenCost: 1000,
+    tenPullGuaranteesRankAOrHigher: true,
+    tenPullGuaranteesSpecialEffect: true,
+    baseCapacity: 10,
+    capacityExpansionGemCost: 100,
+    rerollCostsByLockedStats: [50, 100, 200, 400] as const,
+    maxRerollLockedStats: 3,
+    combineMaterialCount: 4,
+    combineCostsByTargetRank: {
+      E: 30_000, D: 100_000, C: 300_000, B: 1_000_000,
+      A: 3_000_000, S: 10_000_000, SS: 30_000_000, SSS: 100_000_000,
+    } as const,
+    matchingEffectUpgradeChancePerMaterial: 0.20,
+    maxMatchingEffectUpgradeChance: 0.80,
+    effectLadders: {
+      gold: [3, 6, 9, 12, 15],
+      exp: [3, 6, 9, 12, 15],
+      greatGrowth: [3, 6, 9, 12, 15],
+      critical: [5, 10, 15, 20, 25],
+      evasion: [3, 6, 9, 12, 15],
+      cooldown: [1, 2, 3, 4, 5],
+    } as const,
+    dropAndGachaCooldownMaxLevel: 3,
+    equippedCanBeCombineParent: true,
+    equippedCanBeCombineMaterial: false,
+    protectedCanBeCombineParent: true,
+    protectedCanBeCombineMaterial: false,
+  },
+  pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2 },
+  daily: { missionCount: 5, resetHourJst: 0, totalGemReward: 20, loginCycleDays: 7 },
+  navigation: {
+    bottomTabs: ['ショップ', '装備', 'バトル', 'コレクション', 'ランキング'] as const,
+    equipmentTabs: ['武器', '防具', 'オーブ', 'ペット'] as const,
+  },
+} as const;
