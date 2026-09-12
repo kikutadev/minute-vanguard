@@ -1,18 +1,10 @@
-export type RewardBeatTier = 'micro' | 'meaningful' | 'major';
+import type { RewardSignal, RewardSignalTier } from '../src/application/reward-signals.js';
+export type RewardBeatTier = RewardSignalTier;
 /**
  * Product-specific simulator adapters classify their own semantic events into reward beats.
  * The kit deliberately does not infer "reward" from currency deltas or event names.
  */
-export type RewardBeat = Readonly<{
-    id: string;
-    simTimeSec: number;
-    tier: RewardBeatTier;
-    surprise: boolean;
-    /** Stable product-owned key linking this beat to the cue/window that anticipated it. */
-    anticipationKey?: string;
-    /** True when this reward exposes a concrete next thing to wait for, earn, reveal, or attempt. */
-    nextExpectationCreated: boolean;
-}>;
+export type RewardBeat = RewardSignal;
 /**
  * Interval during which the product visibly exposes a near-term expectation.
  * Examples: progress to the next reveal, a countdown, an afford-soon target, or a pending random outcome.
