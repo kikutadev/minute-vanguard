@@ -1,0 +1,38 @@
+{
+  "name": "minute-vanguard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.25.0",
+  "scripts": {
+    "dev": "vite --config vite.config.ts",
+    "build": "tsc --noEmit && vite build --config vite.config.ts",
+    "typecheck": "tsc --noEmit --pretty false",
+    "test": "vitest run --config vitest.config.ts",
+    "lint": "eslint definitions plugin application simulator web tests vite.config.ts vitest.config.ts",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "preview": "vite preview --config vite.config.ts"
+  },
+  "dependencies": {
+    "idle-game-kit": "file:./vendor/idle-game-kit",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.9.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
