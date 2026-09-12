@@ -14,6 +14,8 @@ const checks = [
   ['guide', 'orb.combine', ['同ランクの素材オーブ4個', 'SSSまで到達可能']],
   ['guide', 'orb.reroll', ['3つまで固定', '50', '400']],
   ['guide', 'pet.capture', ['30体以上討伐', '1%']],
+  ['patchnotes', 'titles.core', ['全52種', '5枠', '1%', '15個', '毎日3種', '300ジェム']],
+  ['guide', 'titles.current', ['1 / 3 / 6 / 10 / 15', '5,000', '40', '転職するとすべて外れる', '全部外したいときは', '300']],
   ['guide', 'daily.reset', ['毎日5個', '日本時間0時']],
   ['patchnotes', 'ui.bottomTabs', ['ショップ・装備・バトル・コレクション・ランキング']],
   ['patchnotes', 'ui.battleFloaters', ['デイリーミッション・転職・ミミック銀行']],

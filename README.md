@@ -11,7 +11,7 @@ Battle
 → deterministic 20-turn-cap combat
 → layered reward reveal
 → 5-second beginner / 60-second normal cooldown
-→ Equipment / Orb / Mission / Pet decisions
+→ Equipment / Orb / Title / Mission / Pet decisions
 → Lv.30 Job Change and durable growth
 → next Battle
 ```
@@ -26,6 +26,7 @@ Implemented in the current build:
 - first-defeat Gem rewards, rarity-sensitive Gem drops, 1% permanent stat rewards
 - randomized ±30% level growth with Great Growth
 - Weapon / Armor / Orb loadout using Kit Inventory / Loadout
+- 52-title progressive collection/loadout using Kit Progressive Title primitives
 - Equipment-tab buy / equip / +1〜+5 upgrade / discard flow
 - F〜SSS orb gacha and special effects
 - nine jobs and Lv.30 job change with permanent-growth conditions

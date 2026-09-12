@@ -83,10 +83,27 @@ export const hero60Reference = {
     protectedCanBeCombineParent: true,
     protectedCanBeCombineMaterial: false,
   },
+  titles: {
+    count: 52,
+    slots: 5,
+    copyThresholds: [1, 3, 6, 10, 15] as const,
+    dropChance: 0.01,
+    dailyShopOffers: 3,
+    dailyShopGemCost: 300,
+    paidResetGemCost: 300,
+    costLimitAnchors: [
+      { level: 1, cost: 4 },
+      { level: 30, cost: 10 },
+      { level: 120, cost: 16 },
+      { level: 5000, cost: 40 },
+    ] as const,
+    maxedDropsAreWasted: true,
+    clearsOnJobChange: true,
+  },
   pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2 },
   daily: { missionCount: 5, resetHourJst: 0, totalGemReward: 20, loginCycleDays: 7 },
   navigation: {
     bottomTabs: ['ショップ', '装備', 'バトル', 'コレクション', 'ランキング'] as const,
-    equipmentTabs: ['武器', '防具', 'オーブ', 'ペット'] as const,
+    equipmentTabs: ['武器', '防具', 'オーブ', 'ペット', '肩書き'] as const,
   },
 } as const;

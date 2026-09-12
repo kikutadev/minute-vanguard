@@ -3,6 +3,7 @@ import type {
   GameState,
   InventoryState,
   LoadoutState,
+  ProgressiveTitleCollectionState,
 } from 'idle-game-kit';
 
 export type StatKey = 'hp' | 'attack' | 'defense' | 'magicAttack' | 'magicDefense' | 'luck';
@@ -12,6 +13,7 @@ export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary
 export type OrbRank = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'SS' | 'SSS';
 export type TimeBoostKind = 'rush' | 'exp' | 'gold';
 export type TimeBoostState = Readonly<Record<TimeBoostKind, number>>;
+export type TitleShopState = Readonly<{ dayKey: string; offeredTitleIds: readonly string[]; purchasedTitleIds: readonly string[] }>;
 
 export type OrbEffectId = 'gemDrop' | 'goldProtection' | 'gold' | 'exp' | 'drawExp' | 'regen' | 'greatGrowth' | 'critical' | 'evasion' | 'cooldown';
 
@@ -112,6 +114,8 @@ export type BattleResult = Readonly<{
   droppedOrbInstanceId: string | null;
   firstDefeat: boolean;
   capturedPetEnemyId: string | null;
+  droppedTitleId: string | null;
+  titleCopyAdded: boolean;
 }>;
 
 export type PlayerProgress = Readonly<{
@@ -157,6 +161,9 @@ export type MinuteVanguardGameData = Readonly<{
   activePetEnemyIds: readonly string[];
   orbCapacity: number;
   timeBoosts: TimeBoostState;
+  titles: ProgressiveTitleCollectionState;
+  favoriteTitleIds: readonly string[];
+  titleShop: TitleShopState;
   missionProgress: Readonly<{ dayKey: string; battles: number; wins: number; upgrades: number; claimed: readonly string[] }>;
 }>;
 

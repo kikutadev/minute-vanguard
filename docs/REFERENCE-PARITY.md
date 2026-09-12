@@ -49,9 +49,13 @@
   - Cooldown 1/2/3/4/5秒
 - 同一敵30討伐で捕獲解禁、勝利時1%、通常1体/テイマー2体
 - Daily 5個 / JST 0時 / 合計20Gem
-- 下部5タブ、装備4タブ
+- 下部5タブ、装備5タブ（武器 / 防具 / オーブ / ペット / 肩書き）
 - Time Boost: 3分/30Gem、10分/100Gem、30分/300Gem
 - Rush: CD10秒・効果中Gem skip不可 / EXP・Gold boost: ×2
+- 肩書き: 52種 / 5枠 / Lv1〜5 / 累計1・3・6・10・15個
+- 肩書き勝利ドロップ1%、日替わり3種、各300Gem・1日1回
+- 肩書きコスト上限の公開アンカー: Lv1=4 / Lv30=10 / Lv120=16 / Lv5000=40
+- 肩書きは転職で全解除、就職中の全解除は300Gem
 
 ### Public behavior known, exact table not yet public-locked
 
@@ -59,14 +63,14 @@
 - Mimic Bank のGem投入量別の正確な確率表
 - オーブ提供割合の全ランク確率
 - Gold袋の直近10戦からの具体的算式
+- 肩書きコスト上限の完全な中間テーブル（公開guideは端点/一部アンカーのみ）
 
 これらは推測値を reference contract に書かない。公開情報で確定するまで、既存の独自balanceとして明示的に分離する。
 
 ### Next implementation gaps
 
 1. Orb replacement flow when inventory is full
-2. Titles: 52種 / 5枠 / Lv1〜5 / cost cap / 1% drop / daily shop
-3. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
-4. Gold bags using last-ten-win history
-5. Login bonus 7-day cycle
-6. Server boundary for real ranking / PvP / raid
+2. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
+3. Gold bags using last-ten-win history
+4. Login bonus 7-day cycle
+5. Server boundary for real ranking / PvP / raid

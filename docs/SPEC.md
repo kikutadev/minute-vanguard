@@ -90,6 +90,28 @@ Orb ranks are F / E / D / C / B / A / S / SS / SSS. Orbs distribute percentage b
 
 Rank-up synthesis, reroll, locking, favorites and capacity expansion are implemented. The base capacity is 10, expansion costs 100 Gem per slot, reroll preserves total percentage budget with up to three locked stats, and synthesis consumes one parent plus four same-rank materials while preserving the parent instance.
 
+## Progressive titles
+
+Titles are a fourth equipment-adjacent progression axis but do not add raw stats. The product owns 52 original title definitions arranged across 13 behavior-changing effect families. Reusable copy/level/loadout constraints come from Kit's `ProgressiveTitleCollectionState`.
+
+- 52 title definitions
+- five equipped slots
+- Lv.1–5 unlock at cumulative 1 / 3 / 6 / 10 / 15 copies
+- monster victory has a 1% title-drop roll, followed by an equal pick across all 52
+- a maxed title can still be selected by the drop roll and then grants no additional copy
+- daily Shop has three fixed JST-day offers, 300 Gem each, one purchase each
+- same-day offers do not shift after a purchase or after reaching Lv.5
+- equipped title cost is limited by player level
+- verified public cap anchors are Lv.1=4, Lv.30=10, Lv.120=16, Lv.5000=40
+- the public source does not expose the complete current intermediate cost table, so Minute Vanguard explicitly interpolates only between those verified anchors rather than claiming hidden reference values
+- before the first real job, individual titles can be removed freely
+- after taking a job, individual removal is locked; a 300-Gem full reset is available
+- job change clears the equipped five slots but preserves title ownership and levels
+- equipped title levels and order may be changed without removing the title
+- search and favorites are local presentation state / product metadata
+
+When multiple equipped titles belong to the same effect family, Minute Vanguard applies the strongest value only. Names and concrete effects are original product content; only the collection density and progression cadence are benchmarked against the public reference.
+
 ## Jobs
 
 Lv.30 unlocks job change. Current job set:

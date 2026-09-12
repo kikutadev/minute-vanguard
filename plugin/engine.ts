@@ -1,21 +1,30 @@
 import {
   GameNumber,
   addItemInstance,
+  addProgressiveTitleCopy,
   applyCurrencyTransaction,
   applyRewards,
   consumeCooldown,
   createCooldownState,
   createLoadoutState,
+  createProgressiveTitleCollection,
   createRngStreams,
   equipItem,
+  equipProgressiveTitle,
   nextRandom,
   previewCooldown,
+  progressiveTitleLevelFromCopies,
+  progressiveTitleTotalCost,
+  reorderProgressiveTitle,
   readCurrency,
   recordCurrencySpend,
   reduceCooldown,
   removeItemInstance,
   resolveOfflineElapsed,
   unequipItem,
+  unequipProgressiveTitle,
+  clearEquippedProgressiveTitles,
+  updateProgressiveTitleLevel,
   type CommandResult,
   type CooldownPreview,
   type CurrencyDefinition,
@@ -40,6 +49,14 @@ import {
   shopEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
+import {
+  TITLE_DROP_CHANCE,
+  TITLE_RESET_COST,
+  TITLE_SHOP_PRICE,
+  titleDefinitions,
+  titleRules,
+  type TitleEffectFamily,
+} from '../definitions/title-definitions';
 import type {
   BattleResult,
   BattleTurn,
@@ -149,6 +166,9 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       activePetEnemyIds: [],
       orbCapacity: ORB_BASE_CAPACITY,
       timeBoosts: { rush: 0, exp: 0, gold: 0 },
+      titles: createProgressiveTitleCollection(),
+      favoriteTitleIds: [],
+      titleShop: { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), createProgressiveTitleCollection()), purchasedTitleIds: [] },
       missionProgress: { dayKey: jstDayKey(nowMs), battles: 0, wins: 0, upgrades: 0, claimed: [] },
     },
   };
@@ -163,6 +183,9 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         ...state.gameData,
         orbCapacity: state.gameData.orbCapacity ?? ORB_BASE_CAPACITY,
         timeBoosts: state.gameData.timeBoosts ?? { rush: 0, exp: 0, gold: 0 },
+        titles: state.gameData.titles ?? createProgressiveTitleCollection(),
+        favoriteTitleIds: state.gameData.favoriteTitleIds ?? [],
+        titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
       },
     };
   }
@@ -196,6 +219,7 @@ export function advanceFromWallClock(
       gameData: {
         ...nextState.gameData,
         missionProgress: { dayKey: currentDayKey, battles: 0, wins: 0, upgrades: 0, claimed: [] },
+        titleShop: { dayKey: currentDayKey, offeredTitleIds: computeDailyTitleOfferIds(currentDayKey, nextState.gameData.titles), purchasedTitleIds: [] },
       },
     };
   }
@@ -351,7 +375,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       || (job.id === 'job.tamer' && stats.magicAttack > stats.attack);
     const offensive = magicUser ? stats.magicAttack : stats.attack;
     const enemyGuard = magicUser ? Math.round(enemy.magicDefense * mutationStat) : Math.round(enemy.defense * mutationStat);
-    const critChance = Math.min(0.45, 0.05 + stats.luck / (stats.luck + 240) * 0.25 + orbEffectValue(nextState, 'critical') / 100);
+    const critChance = Math.min(0.65, 0.05 + stats.luck / (stats.luck + 240) * 0.25 + orbEffectValue(nextState, 'critical') / 100 + titleEffectValue(nextState, 'criticalChance'));
     const critical = critRoll.value < critChance;
     let skillMultiplier = 1;
     if (job.id === 'job.warrior' && playerHp / maxHp <= 0.3) skillMultiplier *= 2;
@@ -360,7 +384,11 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       wraithMultiplier = Math.min(10, wraithMultiplier * 1.5);
       skillMultiplier *= wraithMultiplier;
     }
-    let playerDamage = damage(offensive * skillMultiplier, enemyGuard, variance, critical ? 1.8 : 1);
+    const titleDirectMultiplier = Math.max(1, titleEffectValue(nextState, 'battleDamage'))
+      * Math.max(1, titleEffectValue(nextState, magicUser ? 'magicDamage' : 'physicalDamage'))
+      * (turn === 1 ? Math.max(1, titleEffectValue(nextState, 'openingDamage')) : 1);
+    const titleCriticalMultiplier = Math.max(1.8, titleEffectValue(nextState, 'criticalDamage'));
+    let playerDamage = damage(offensive * skillMultiplier * titleDirectMultiplier, enemyGuard, variance, critical ? titleCriticalMultiplier : 1);
 
     if (job.id === 'job.ninja' && enemy.rarity !== 'boss' && enemy.rarity !== 'legendary') {
       const executeChance = Math.min(0.18, stats.luck / 1200);
@@ -381,7 +409,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
 
     let petDamage = 0;
     if (enemyHp > 0 && nextState.gameData.activePetEnemyIds.length > 0) {
-      const petBase = Math.max(1, Math.round((stats.attack + stats.magicAttack) * 0.14 * (job.id === 'job.tamer' ? 1.4 : 1)));
+      const petBase = Math.max(1, Math.round((stats.attack + stats.magicAttack) * 0.14 * (job.id === 'job.tamer' ? 1.4 : 1) * Math.max(1, titleEffectValue(nextState, 'petDamage'))));
       petDamage = petBase + (nextState.gameData.activePetEnemyIds.length > 1 ? Math.max(1, Math.round(petBase * 0.6)) : 0);
       enemyHp = Math.max(0, enemyHp - petDamage);
       logs.push(`ペットの追撃！ ${petDamage} ダメージ！`);
@@ -404,13 +432,17 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       const baseDodge = job.id === 'job.ninja' ? 0.3 : job.id === 'job.wraith' ? 0.7 : 0;
       const dodgeChance = Math.min(0.9, baseDodge + orbEffectValue(nextState, 'evasion') / 100);
       dodged = dodgeRoll.value < dodgeChance;
+      if (!dodged && titleEffectValue(nextState, 'evasion') > 0) {
+        const titleDodgeRoll = draw(nextState, ids.rng.combat); nextState = titleDodgeRoll.state;
+        dodged = titleDodgeRoll.value < titleEffectValue(nextState, 'evasion');
+      }
       enemySpecial = specialRoll.value < enemy.specialChance;
       if (dodged) {
         logs.push(`${enemy.displayName}の攻撃を回避！`);
       } else {
         const enemyPower = (enemy.attackType === 'magic' ? enemy.magicAttack : enemy.attack) * mutationStat;
         const guard = enemy.attackType === 'magic' ? stats.magicDefense : stats.defense;
-        enemyDamage = damage(enemyPower * (enemySpecial ? 1.75 : 1), guard, 1, 1);
+        enemyDamage = Math.max(1, Math.round(damage(enemyPower * (enemySpecial ? 1.75 : 1), guard, 1, 1) * (1 - Math.min(0.75, titleEffectValue(nextState, 'damageReduction')))));
         playerHp = Math.max(0, playerHp - enemyDamage);
         logs.push(`${enemy.displayName}${enemySpecial ? 'の必殺技' : 'の攻撃'}！ ${enemyDamage} ダメージ！`);
         if (job.id === 'job.wraith') wraithMultiplier = Math.max(1, wraithMultiplier / 3);
@@ -420,6 +452,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     let heal = 0;
     if (playerHp > 0 && job.id === 'job.priest') heal += Math.max(1, Math.floor(maxHp * 0.05));
     if (playerHp > 0) heal += Math.max(0, Math.floor(maxHp * orbEffectValue(nextState, 'regen') / 100));
+    if (playerHp > 0) heal += Math.max(0, Math.floor(maxHp * titleEffectValue(nextState, 'regen')));
     if (heal > 0) {
       const before = playerHp;
       playerHp = Math.min(maxHp, playerHp + heal);
@@ -446,16 +479,18 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   let droppedItemInstanceId: string | null = null;
   let droppedOrbInstanceId: string | null = null;
   let capturedPetEnemyId: string | null = null;
+  let droppedTitleId: string | null = null;
+  let titleCopyAdded = false;
 
   if (outcome === 'victory') {
     streak = nextState.gameData.lastDefeatedEnemyId === enemy.id ? nextState.gameData.consecutiveDefeats + 1 : 1;
     streakMultiplier = streak >= 5 ? 2 : streak >= 3 ? 1.5 : streak >= 2 ? 1.2 : 1;
     const jackpotRoll = draw(nextState, ids.rng.loot); nextState = jackpotRoll.state;
     jackpotMultiplier = rollJackpotMultiplier(jackpotRoll.value);
-    const goldMultiplier = (nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'gold') / 100) * (isTimeBoostActive(nextState, 'gold') ? 2 : 1);
+    const goldMultiplier = (nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'gold') / 100) * (1 + titleEffectValue(nextState, 'gold')) * (isTimeBoostActive(nextState, 'gold') ? 2 : 1);
     goldDelta = Math.max(1, Math.round(enemy.gold * rewardMultiplier * streakMultiplier * jackpotMultiplier * goldMultiplier));
     if (job.id === 'job.thief') goldDelta += Math.max(1, Math.round(stats.luck * 0.35));
-    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * (nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'exp') / 100) * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
+    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * (nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'exp') / 100) * (1 + titleEffectValue(nextState, 'exp')) * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
     nextState = grantCurrency(nextState, ids.currency.gold, goldDelta, `battle.${enemy.id}`);
 
     if (firstDefeat) {
@@ -491,7 +526,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     if (killsAfterThisBattle >= 30 && !nextState.gameData.ownedPetEnemyIds.includes(enemy.id)) {
       const captureRoll = draw(nextState, ids.rng.loot);
       nextState = captureRoll.state;
-      const captureChance = 0.01 * (job.id === 'job.tamer' ? 1.5 : 1);
+      const captureChance = 0.01 * (job.id === 'job.tamer' ? 1.5 : 1) + titleEffectValue(nextState, 'capture');
       if (captureRoll.value < captureChance) {
         capturedPetEnemyId = enemy.id;
         const ownedPetEnemyIds = [...nextState.gameData.ownedPetEnemyIds, enemy.id];
@@ -508,6 +543,18 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
             player: { ...nextState.gameData.player, petCount: ownedPetEnemyIds.length },
           },
         };
+      }
+    }
+
+    const titleDropRoll = draw(nextState, ids.rng.loot); nextState = titleDropRoll.state;
+    if (titleDropRoll.value < TITLE_DROP_CHANCE) {
+      const titlePick = draw(nextState, ids.rng.loot); nextState = titlePick.state;
+      const definition = titleDefinitions[Math.min(titleDefinitions.length - 1, Math.floor(titlePick.value * titleDefinitions.length))]!;
+      droppedTitleId = definition.id;
+      const acquired = addProgressiveTitleCopy(nextState.gameData.titles, definition.id, titleRules);
+      titleCopyAdded = acquired.added;
+      if (acquired.added) {
+        nextState = { ...nextState, gameData: { ...nextState.gameData, titles: acquired.collection } };
       }
     }
 
@@ -601,6 +648,8 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     droppedOrbInstanceId,
     firstDefeat,
     capturedPetEnemyId,
+    droppedTitleId,
+    titleCopyAdded,
   };
   nextState = {
     ...nextState,
@@ -937,6 +986,7 @@ export function changeJob(
         baseStats: BASE_STATS,
         permanentStats,
       },
+      titles: clearEquippedProgressiveTitles(spend.state.gameData.titles),
     },
   };
   return accept(nextStateBase, [event(nextStateBase, 'jobChanged', `${target.id}:${nextStateBase.gameData.player.totalJobChanges}`, { bonusEarned, cost })]);
@@ -948,6 +998,127 @@ export function goldBalance(state: MinuteVanguardState): number {
 
 export function gemBalance(state: MinuteVanguardState): number {
   return readCurrency(state.currencies, ids.currency.gem).toNumber();
+}
+
+export function titleCostLimitForLevel(level: number): number {
+  const normalized = Math.max(1, Math.floor(level));
+  // Public guide exposes these anchors but keeps the full step table inside the game UI.
+  // Minute Vanguard interpolates only between verified anchors instead of pretending an unknown table is exact.
+  const anchors = [[1, 4], [30, 10], [120, 16], [5000, 40]] as const;
+  for (let index = 1; index < anchors.length; index += 1) {
+    const previous = anchors[index - 1]!;
+    const current = anchors[index]!;
+    if (normalized <= current[0]) {
+      const ratio = (normalized - previous[0]) / (current[0] - previous[0]);
+      return Math.floor(previous[1] + ratio * (current[1] - previous[1]));
+    }
+  }
+  return anchors.at(-1)![1];
+}
+
+export function titleLevel(state: MinuteVanguardState, titleId: string): number {
+  return progressiveTitleLevelFromCopies(state.gameData.titles.copies[titleId] ?? 0, titleRules.copyThresholds);
+}
+
+export function titleEquipCost(state: MinuteVanguardState): number {
+  return progressiveTitleTotalCost(state.gameData.titles, titleDefinitions);
+}
+
+export function dailyTitleOffers(state: MinuteVanguardState): readonly typeof titleDefinitions[number][] {
+  const definitionsById = new Map(titleDefinitions.map((definition) => [definition.id, definition] as const));
+  return state.gameData.titleShop.offeredTitleIds
+    .map((titleId) => definitionsById.get(titleId))
+    .filter((definition): definition is typeof titleDefinitions[number] => definition !== undefined);
+}
+
+export function buyDailyTitle(
+  state: MinuteVanguardState,
+  titleId: string,
+): CommandResult<MinuteVanguardState, 'not-offered' | 'already-purchased' | 'already-maxed' | 'insufficient-gems'> {
+  if (!dailyTitleOffers(state).some((definition) => definition.id === titleId)) return reject(state, 'not-offered');
+  if (state.gameData.titleShop.purchasedTitleIds.includes(titleId)) return reject(state, 'already-purchased');
+  if (titleLevel(state, titleId) >= titleRules.copyThresholds.length) return reject(state, 'already-maxed');
+  const spend = spendCurrency(state, ids.currency.gem, TITLE_SHOP_PRICE, `title.shop.${titleId}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const acquired = addProgressiveTitleCopy(spend.state.gameData.titles, titleId, titleRules);
+  const nextState: MinuteVanguardState = {
+    ...spend.state,
+    gameData: {
+      ...spend.state.gameData,
+      titles: acquired.collection,
+      titleShop: {
+        ...spend.state.gameData.titleShop,
+        purchasedTitleIds: [...spend.state.gameData.titleShop.purchasedTitleIds, titleId],
+      },
+    },
+  };
+  return accept(nextState, [event(nextState, 'dailyTitlePurchased', titleId, { price: TITLE_SHOP_PRICE, copies: acquired.copies, level: acquired.level })]);
+}
+
+export function equipOwnedTitle(
+  state: MinuteVanguardState,
+  titleId: string,
+  level = titleLevel(state, titleId),
+): CommandResult<MinuteVanguardState, 'unknown-title' | 'not-owned' | 'invalid-level' | 'already-equipped' | 'slot-limit' | 'cost-limit'> {
+  const result = equipProgressiveTitle({
+    collection: state.gameData.titles,
+    definitions: titleDefinitions,
+    rules: titleRules,
+    titleId,
+    level,
+    costLimit: titleCostLimitForLevel(state.gameData.player.level),
+  });
+  if (!result.accepted) return reject(state, result.reason);
+  const nextState = { ...state, gameData: { ...state.gameData, titles: result.collection } };
+  return accept(nextState, [event(nextState, 'titleEquipped', titleId, { level })]);
+}
+
+export function setEquippedTitleLevel(
+  state: MinuteVanguardState,
+  titleId: string,
+  level: number,
+): CommandResult<MinuteVanguardState, 'not-equipped' | 'invalid-level'> {
+  const result = updateProgressiveTitleLevel({ collection: state.gameData.titles, rules: titleRules, titleId, level });
+  if (!result.accepted) return reject(state, result.reason);
+  const nextState = { ...state, gameData: { ...state.gameData, titles: result.collection } };
+  return accept(nextState, [event(nextState, 'titleLevelChanged', titleId, { level })]);
+}
+
+export function moveEquippedTitle(state: MinuteVanguardState, titleId: string, targetIndex: number): MinuteVanguardState {
+  const titles = reorderProgressiveTitle(state.gameData.titles, titleId, targetIndex);
+  return titles === state.gameData.titles ? state : { ...state, gameData: { ...state.gameData, titles } };
+}
+
+export function unequipOwnedTitle(
+  state: MinuteVanguardState,
+  titleId: string,
+): CommandResult<MinuteVanguardState, 'locked-until-job-change'> {
+  if (state.gameData.player.jobId !== 'job.adventurer') return reject(state, 'locked-until-job-change');
+  const titles = unequipProgressiveTitle(state.gameData.titles, titleId);
+  const nextState = titles === state.gameData.titles ? state : { ...state, gameData: { ...state.gameData, titles } };
+  return accept(nextState, [event(nextState, 'titleUnequipped', titleId)]);
+}
+
+export function resetEquippedTitles(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'insufficient-gems'> {
+  if (state.gameData.titles.equipped.length === 0) return accept(state, []);
+  if (state.gameData.player.jobId === 'job.adventurer') {
+    const nextState = { ...state, gameData: { ...state.gameData, titles: clearEquippedProgressiveTitles(state.gameData.titles) } };
+    return accept(nextState, [event(nextState, 'titlesReset', 'free')]);
+  }
+  const spend = spendCurrency(state, ids.currency.gem, TITLE_RESET_COST, 'title.reset');
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const nextState = { ...spend.state, gameData: { ...spend.state.gameData, titles: clearEquippedProgressiveTitles(spend.state.gameData.titles) } };
+  return accept(nextState, [event(nextState, 'titlesReset', 'paid', { price: TITLE_RESET_COST })]);
+}
+
+export function toggleTitleFavorite(state: MinuteVanguardState, titleId: string): MinuteVanguardState {
+  const favorite = state.gameData.favoriteTitleIds.includes(titleId);
+  const favoriteTitleIds = favorite
+    ? state.gameData.favoriteTitleIds.filter((id) => id !== titleId)
+    : [...state.gameData.favoriteTitleIds, titleId];
+  return { ...state, gameData: { ...state.gameData, favoriteTitleIds } };
 }
 
 export function claimDailyMission(
@@ -1198,6 +1369,39 @@ function orbEffectValue(state: MinuteVanguardState, effectId: string): number {
   if (orbId === null || orbId === undefined) return 0;
   const orb = state.gameData.inventory[orbId]?.data;
   return orb?.effectId === effectId ? orb.effectValue ?? 0 : 0;
+}
+
+function titleEffectValue(state: MinuteVanguardState, effectFamily: TitleEffectFamily): number {
+  let strongest = 0;
+  for (const equipped of state.gameData.titles.equipped) {
+    const definition = titleDefinitions.find((candidate) => candidate.id === equipped.titleId);
+    if (definition?.effectFamily !== effectFamily) continue;
+    const value = definition.values[Math.max(0, Math.min(4, equipped.level - 1))] ?? 0;
+    strongest = Math.max(strongest, value);
+  }
+  return strongest;
+}
+
+function computeDailyTitleOfferIds(
+  dayKey: string,
+  collection: ReturnType<typeof createProgressiveTitleCollection>,
+): readonly string[] {
+  const maxCopies = titleRules.copyThresholds.at(-1)!;
+  return titleDefinitions
+    .filter((definition) => (collection.copies[definition.id] ?? 0) < maxCopies)
+    .map((definition) => ({ id: definition.id, order: hashString(`${dayKey}:${definition.id}`) }))
+    .sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+    .slice(0, 3)
+    .map((entry) => entry.id);
+}
+
+function hashString(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
 }
 
 function rollNormalRarity(value: number, beginner: boolean): MonsterRarity {

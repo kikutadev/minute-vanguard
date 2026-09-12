@@ -40,3 +40,4 @@ export * from './domain/rng/rng.js';
 export * from './domain/state.js';
 export * from './domain/token/token.js';
 export * from './domain/title/title.js';
+export * from './domain/title/progressive-title.js';

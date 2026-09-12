@@ -15,6 +15,7 @@ import {
   shopEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
+import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
 import type { BattleResult, EquipmentData, MinuteVanguardState, StatKey, TimeBoostKind } from '../definitions/types';
 import {
   activateRareGuarantee,
@@ -23,6 +24,7 @@ import {
   battleCooldown,
   buyEquipment,
   buyPermanentUpgrade,
+  buyDailyTitle,
   changeJob,
   claimDailyMission,
   combineOrb,
@@ -32,13 +34,16 @@ import {
   currentJobBonusRequirement,
   discardItem,
   drawOrb,
+  dailyTitleOffers,
   effectiveBattleCooldownSec,
   expandOrbCapacity,
   equipOwnedItem,
+  equipOwnedTitle,
   expRequiredForNextLevel,
   fight,
   gemBalance,
   goldBalance,
+  moveEquippedTitle,
   healAtInn,
   jobChangeCost,
   orbCombineCost,
@@ -48,18 +53,25 @@ import {
   playerCombatStats,
   purchaseTimeBoost,
   rerollOrbStats,
+  resetEquippedTitles,
+  setEquippedTitleLevel,
   timeBoostRemainingSec,
   setActivePet,
   skipBattleCooldown,
   toggleOrbFavorite,
   toggleOrbLock,
+  toggleTitleFavorite,
+  titleCostLimitForLevel,
+  titleEquipCost,
+  titleLevel,
+  unequipOwnedTitle,
   upgradeItem,
 } from '../plugin/engine';
 import { publicPlayerDirectory } from './public-player-directory';
 
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
-type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet';
+type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
 type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | null;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
@@ -182,7 +194,26 @@ export function MinuteVanguardApp() {
           const result = setActivePet(state, enemyId, active);
           if (!result.accepted) setNotice(result.reason === 'party-full' ? '編成枠がいっぱいです' : 'そのペットは未所持です');
           else commit(result.state, active ? 'ペットを編成しました' : 'ペットを編成から外しました');
-        }} />}
+        }} onTitleEquip={(titleId, level) => {
+          const result = equipOwnedTitle(state, titleId, level);
+          if (!result.accepted) setNotice(result.reason === 'cost-limit' ? '肩書きコストが上限を超えます' : result.reason === 'slot-limit' ? '肩書きは5枠までです' : '肩書きを装備できません');
+          else commit(result.state, '肩書きを装着しました');
+        }} onTitleLevel={(titleId, level) => {
+          const result = setEquippedTitleLevel(state, titleId, level);
+          if (!result.accepted) setNotice('そのLvには変更できません');
+          else commit(result.state, `肩書きをLv.${level}に変更しました`);
+        }} onTitleMove={(titleId, targetIndex) => {
+          const next = moveEquippedTitle(state, titleId, targetIndex);
+          commit(next, '肩書きの順番を変更しました');
+        }} onTitleUnequip={(titleId) => {
+          const result = unequipOwnedTitle(state, titleId);
+          if (!result.accepted) setNotice(`転職まで外せません。全解除は${TITLE_RESET_COST}ジェムです`);
+          else commit(result.state, '肩書きを外しました');
+        }} onTitleReset={() => {
+          const result = resetEquippedTitles(state);
+          if (!result.accepted) setNotice(`${TITLE_RESET_COST}ジェムが必要です`);
+          else commit(result.state, '肩書きをすべて外しました');
+        }} onTitleFavorite={(titleId) => commit(toggleTitleFavorite(state, titleId))} />}
         {tab === 'shop' && <ShopView state={state} onBuy={(upgradeId) => {
           const result = buyPermanentUpgrade(state, upgradeId);
           if (!result.accepted) setNotice(result.reason === 'already-owned' ? '購入済みです' : 'ジェムが足りません');
@@ -191,6 +222,10 @@ export function MinuteVanguardApp() {
           const result = purchaseTimeBoost(state, kind, durationSec);
           if (!result.accepted) setNotice(result.reason === 'already-active' ? '同じブーストは効果中です' : result.reason === 'insufficient-gems' ? 'ジェムが足りません' : result.reason === 'beginner-fast-cooldown' ? '初心者5秒区間ではラッシュタイムは使えません' : 'このブーストは購入できません');
           else commit(result.state, 'タイムブーストを開始しました');
+        }} onBuyTitle={(titleId) => {
+          const result = buyDailyTitle(state, titleId);
+          if (!result.accepted) setNotice(result.reason === 'insufficient-gems' ? `${TITLE_SHOP_PRICE}ジェムが必要です` : '今日はこの肩書きを購入できません');
+          else commit(result.state, '肩書きを1個獲得しました');
         }} />}
         {tab === 'collection' && <CollectionView state={state} />}
         {tab === 'ranking' && <RankingView state={state} />}
@@ -295,9 +330,11 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
   </section>;
 }
 
-function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void }>) {
+function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
   const { state } = props;
-  const inventory = Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active);
+  const inventory = props.active === 'weapon' || props.active === 'armor' || props.active === 'orb'
+    ? Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active)
+    : [];
   return <section className="page-section equipment-page">
     <h1>装備</h1>
     <div className="equipment-slots">
@@ -308,6 +345,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
       <button className={props.active === 'armor' ? 'active' : ''} onClick={() => props.setActive('armor')}>防具</button>
       <button className={props.active === 'orb' ? 'active' : ''} onClick={() => props.setActive('orb')}>オーブ</button>
       <button className={props.active === 'pet' ? 'active' : ''} onClick={() => props.setActive('pet')}>ペット</button>
+      <button className={props.active === 'title' ? 'active' : ''} onClick={() => props.setActive('title')}>肩書き</button>
     </div>
 
     {props.active === 'weapon' || props.active === 'armor' ? <>
@@ -324,15 +362,15 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
           <em>{offer.price.toLocaleString()} G</em>
         </button>)}
       </div>
-    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : <PetView state={state} onToggle={props.onPetToggle} />}
+    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
   </section>;
 }
 
-function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void }>) {
-  const [active, setActive] = useState<'permanent' | 'boost' | 'gem'>('permanent');
+function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void; onBuyTitle: (titleId: string) => void }>) {
+  const [active, setActive] = useState<'permanent' | 'boost' | 'title' | 'gem'>('permanent');
   return <section className="page-section shop-page">
     <h1>ショップ</h1>
-    <div className="subtabs"><button className={active === 'permanent' ? 'active' : ''} onClick={() => setActive('permanent')}>恒久強化</button><button className={active === 'boost' ? 'active' : ''} onClick={() => setActive('boost')}>タイムブースト</button><button className={active === 'gem' ? 'active' : ''} onClick={() => setActive('gem')}>ジェム</button></div>
+    <div className="subtabs"><button className={active === 'permanent' ? 'active' : ''} onClick={() => setActive('permanent')}>恒久強化</button><button className={active === 'boost' ? 'active' : ''} onClick={() => setActive('boost')}>ブースト</button><button className={active === 'title' ? 'active' : ''} onClick={() => setActive('title')}>肩書き</button><button className={active === 'gem' ? 'active' : ''} onClick={() => setActive('gem')}>ジェム</button></div>
     {active === 'permanent' && <>
       <p className="shop-lead">一度買えばずっと有効。装備の購入は「装備」タブで行います。</p>
       <div className="upgrade-list">
@@ -346,8 +384,25 @@ function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: Perm
       <div className="gold-bag-card"><strong>ゴールド袋</strong><p>直近の戦果に応じたGoldをジェムでまとめて受け取る機能。</p><button disabled>戦果データ準備中</button></div>
     </>}
     {active === 'boost' && <TimeBoostShop state={props.state} onBuy={props.onBuyTimeBoost} />}
+    {active === 'title' && <DailyTitleShop state={props.state} onBuy={props.onBuyTitle} />}
     {active === 'gem' && <div className="empty-state">ソロ版ではジェム購入ストアを接続していません。</div>}
   </section>;
+}
+
+function DailyTitleShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (titleId: string) => void }>) {
+  const offers = dailyTitleOffers(props.state);
+  return <div className="daily-title-shop">
+    <div className="daily-title-shop-head"><strong>本日の肩書き</strong><span>JST 0:00更新</span><small>各1回 · 💎{TITLE_SHOP_PRICE}</small></div>
+    {offers.length === 0 ? <p className="empty-state">全肩書きを極めています。</p> : <div className="daily-title-offers">{offers.map((definition) => {
+      const purchased = props.state.gameData.titleShop.purchasedTitleIds.includes(definition.id);
+      const level = titleLevel(props.state, definition.id);
+      const copies = props.state.gameData.titles.copies[definition.id] ?? 0;
+      return <article key={definition.id} className="daily-title-card">
+        <span className="title-shop-icon">◇</span><div><strong>{definition.displayName}</strong><small>{definition.description}</small><em>Lv.{level} · {copies}/15個 · COST {definition.cost}</em></div>
+        <button disabled={purchased} onClick={() => props.onBuy(definition.id)}>{purchased ? '購入済' : `💎 ${TITLE_SHOP_PRICE}`}</button>
+      </article>;
+    })}</div>}
+  </div>;
 }
 
 function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void }>) {
@@ -480,6 +535,7 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
       {props.result.levelGrowths.map((growth) => <p key={growth.level} className={growth.greatGrowth ? 'great-growth' : ''}>Lv.{growth.level} UP {growth.greatGrowth ? '★ 大成長！' : ''}</p>)}
       {(props.result.droppedItemInstanceId || props.result.droppedOrbInstanceId) && <p>🎁 ドロップを獲得しました</p>}
       {props.result.capturedPetEnemyId && <p className="pet-capture-highlight">🐾 モンスターがなついて仲間になった！</p>}
+      {props.result.droppedTitleId && <p className="title-drop-highlight">◇ 肩書き「{titleDefinitions.find((definition) => definition.id === props.result.droppedTitleId)?.displayName ?? '???'}」{props.result.titleCopyAdded ? 'を獲得！' : 'はLv.5のため増えなかった'}</p>}
       <button className="modal-primary" onClick={props.onClose}>閉じる</button>
     </div>}
   </section></div>;
@@ -541,6 +597,71 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (enemyI
         <span className="pet-glyph">{enemy.glyph}</span><span><strong>{enemy.displayName}</strong><small>{enemy.rarity.toUpperCase()} · 討伐 {kills}</small></span><em>{active ? '参戦中' : '編成する'}</em>
       </button>;
     })}</div>}
+  </div>;
+}
+
+function TitleView(props: Readonly<{ state: MinuteVanguardState; onEquip: (titleId: string, level: number) => void; onLevel: (titleId: string, level: number) => void; onMove: (titleId: string, targetIndex: number) => void; onUnequip: (titleId: string) => void; onReset: () => void; onFavorite: (titleId: string) => void }>) {
+  const [query, setQuery] = useState('');
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
+  const [showUnowned, setShowUnowned] = useState(false);
+  const cost = titleEquipCost(props.state);
+  const costLimit = titleCostLimitForLevel(props.state.gameData.player.level);
+  const equippedById = new Map(props.state.gameData.titles.equipped.map((entry, index) => [entry.titleId, { entry, index }] as const));
+  const normalizedQuery = query.trim().toLowerCase();
+  const visible = titleDefinitions
+    .filter((definition) => {
+      const owned = titleLevel(props.state, definition.id) > 0;
+      if (!owned && !showUnowned && normalizedQuery.length === 0) return false;
+      if (favoriteOnly && !props.state.gameData.favoriteTitleIds.includes(definition.id)) return false;
+      if (normalizedQuery.length > 0 && !`${definition.displayName} ${definition.description}`.toLowerCase().includes(normalizedQuery)) return false;
+      return true;
+    })
+    .sort((left, right) => {
+      const favoriteDiff = Number(props.state.gameData.favoriteTitleIds.includes(right.id)) - Number(props.state.gameData.favoriteTitleIds.includes(left.id));
+      if (favoriteDiff !== 0) return favoriteDiff;
+      const ownedDiff = titleLevel(props.state, right.id) - titleLevel(props.state, left.id);
+      return ownedDiff !== 0 ? ownedDiff : left.cost - right.cost;
+    });
+
+  return <div className="title-view">
+    <div className="title-loadout-sticky">
+      <div className="title-cost-line"><span>装着コスト</span><strong className={cost > costLimit ? 'over' : ''}>{cost} / {costLimit}</strong><small>5枠 · 変更は即保存</small></div>
+      <div className="title-slots">{Array.from({ length: 5 }, (_, index) => {
+        const equipped = props.state.gameData.titles.equipped[index];
+        if (equipped === undefined) return <div className="title-slot empty" key={index}><b>{index + 1}</b><span>空き</span></div>;
+        const definition = titleDefinitions.find((candidate) => candidate.id === equipped.titleId)!;
+        const unlocked = titleLevel(props.state, equipped.titleId);
+        return <article className="title-slot filled" key={equipped.titleId}>
+          <b>{index + 1}</b><div><strong>{definition.displayName}</strong><small>Lv.{equipped.level} · COST {definition.cost}</small></div>
+          <div className="title-slot-controls">
+            <button disabled={equipped.level <= 1} onClick={() => props.onLevel(equipped.titleId, equipped.level - 1)}>−Lv</button>
+            <button disabled={equipped.level >= unlocked} onClick={() => props.onLevel(equipped.titleId, equipped.level + 1)}>＋Lv</button>
+            <button disabled={index === 0} onClick={() => props.onMove(equipped.titleId, index - 1)}>↑</button>
+            <button disabled={index === props.state.gameData.titles.equipped.length - 1} onClick={() => props.onMove(equipped.titleId, index + 1)}>↓</button>
+            <button className="remove" onClick={() => props.onUnequip(equipped.titleId)}>外す</button>
+          </div>
+        </article>;
+      })}</div>
+      {props.state.gameData.titles.equipped.length > 0 && <button className="title-reset" onClick={props.onReset}>{props.state.gameData.player.jobId === 'job.adventurer' ? 'すべて外す' : `💎${TITLE_RESET_COST} ですべて外す`}</button>}
+    </div>
+
+    <div className="title-filter-bar">
+      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名前・効果で検索" aria-label="肩書きを検索" />
+      <button className={favoriteOnly ? 'active' : ''} onClick={() => setFavoriteOnly((value) => !value)}>★</button>
+      <button className={showUnowned ? 'active' : ''} onClick={() => setShowUnowned((value) => !value)}>未入手</button>
+    </div>
+    <div className="title-list">{visible.map((definition) => {
+      const copies = props.state.gameData.titles.copies[definition.id] ?? 0;
+      const unlocked = titleLevel(props.state, definition.id);
+      const equipped = equippedById.get(definition.id);
+      const favorite = props.state.gameData.favoriteTitleIds.includes(definition.id);
+      return <article className={`title-card ${unlocked === 0 ? 'locked' : ''} ${equipped ? 'equipped' : ''}`} key={definition.id}>
+        <button className={`title-favorite ${favorite ? 'active' : ''}`} onClick={() => props.onFavorite(definition.id)} disabled={unlocked === 0}>{favorite ? '★' : '☆'}</button>
+        <div className="title-card-main"><strong>{unlocked > 0 ? definition.displayName : '???'}</strong><small>{unlocked > 0 ? formatTitleEffect(definition, equipped?.entry.level ?? unlocked) : '未入手'}</small><em>{unlocked > 0 ? `Lv.${unlocked} · ${copies}/15個 · COST ${definition.cost}` : `COST ${definition.cost}`}</em></div>
+        {unlocked > 0 && (equipped ? <span className="title-equipped-label">装着 {equipped.index + 1}</span> : <button className="title-equip-button" onClick={() => props.onEquip(definition.id, unlocked)}>装着</button>)}
+      </article>;
+    })}</div>
+    {visible.length === 0 && <p className="empty-state">条件に合う肩書きがありません。</p>}
   </div>;
 }
 
@@ -656,6 +777,14 @@ function nextOrbRank(rank: EquipmentData['orbRank']): string {
 
 function jobDisplayName(jobId: string): string {
   return jobs.find((job) => job.id === jobId)?.displayName ?? jobId;
+}
+
+function formatTitleEffect(definition: MinuteVanguardTitleDefinition, level: number): string {
+  const value = definition.values[Math.max(0, Math.min(4, level - 1))] ?? definition.values[0];
+  if (['openingDamage', 'battleDamage', 'physicalDamage', 'magicDamage', 'petDamage', 'criticalDamage'].includes(definition.effectFamily)) {
+    return `${definition.description} ×${value.toFixed(2)}`;
+  }
+  return `${definition.description} ${(value * 100).toFixed(value * 100 < 10 ? 1 : 0)}%`;
 }
 
 function formatRemainingTime(totalSec: number): string {
