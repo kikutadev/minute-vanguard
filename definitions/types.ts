@@ -10,6 +10,9 @@ export type StatValues = Readonly<Record<StatKey, number>>;
 export type EquipmentKind = 'weapon' | 'armor' | 'orb';
 export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'boss';
 export type OrbRank = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'SS' | 'SSS';
+export type TimeBoostKind = 'rush' | 'exp' | 'gold';
+export type TimeBoostState = Readonly<Record<TimeBoostKind, number>>;
+
 export type OrbEffectId = 'gemDrop' | 'goldProtection' | 'gold' | 'exp' | 'drawExp' | 'regen' | 'greatGrowth' | 'critical' | 'evasion' | 'cooldown';
 
 export type EquipmentData = Readonly<{
@@ -153,6 +156,7 @@ export type MinuteVanguardGameData = Readonly<{
   ownedPetEnemyIds: readonly string[];
   activePetEnemyIds: readonly string[];
   orbCapacity: number;
+  timeBoosts: TimeBoostState;
   missionProgress: Readonly<{ dayKey: string; battles: number; wins: number; upgrades: number; claimed: readonly string[] }>;
 }>;
 

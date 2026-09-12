@@ -54,6 +54,7 @@ import type {
   PermanentStatReward,
   StatKey,
   StatValues,
+  TimeBoostKind,
 } from '../definitions/types';
 
 const SCHEMA_VERSION = 2;
@@ -61,6 +62,11 @@ const MAX_BATTLE_TURNS = 20;
 const BEGINNER_FAST_KILLS = 10;
 const STAT_KEYS: readonly StatKey[] = ['hp', 'attack', 'defense', 'magicAttack', 'magicDefense', 'luck'];
 const BASE_STATS: StatValues = { hp: 100, attack: 12, defense: 8, magicAttack: 10, magicDefense: 8, luck: 10 };
+const TIME_BOOST_OPTIONS = [
+  { durationSec: 180, gemCost: 30 },
+  { durationSec: 600, gemCost: 100 },
+  { durationSec: 1800, gemCost: 300 },
+] as const;
 const ORB_BASE_CAPACITY = 10;
 const ORB_CAPACITY_EXPANSION_COST = 100;
 const ORB_REROLL_COSTS = [50, 100, 200, 400] as const;
@@ -142,6 +148,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       ownedPetEnemyIds: [],
       activePetEnemyIds: [],
       orbCapacity: ORB_BASE_CAPACITY,
+      timeBoosts: { rush: 0, exp: 0, gold: 0 },
       missionProgress: { dayKey: jstDayKey(nowMs), battles: 0, wins: 0, upgrades: 0, claimed: [] },
     },
   };
@@ -155,6 +162,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
       gameData: {
         ...state.gameData,
         orbCapacity: state.gameData.orbCapacity ?? ORB_BASE_CAPACITY,
+        timeBoosts: state.gameData.timeBoosts ?? { rush: 0, exp: 0, gold: 0 },
       },
     };
   }
@@ -198,11 +206,47 @@ export function battleCooldown(state: MinuteVanguardState): CooldownPreview {
   return previewCooldown(battleCooldownDefinition, state.gameData.battleCooldown, state.simTimeSec);
 }
 
+export function timeBoostRemainingSec(state: MinuteVanguardState, kind: TimeBoostKind): number {
+  return Math.max(0, Math.ceil((state.gameData.timeBoosts[kind] ?? 0) - state.simTimeSec));
+}
+
+export function isTimeBoostActive(state: MinuteVanguardState, kind: TimeBoostKind): boolean {
+  return timeBoostRemainingSec(state, kind) > 0;
+}
+
 export function effectiveBattleCooldownSec(state: MinuteVanguardState): number {
   if (state.gameData.victories < BEGINNER_FAST_KILLS && state.gameData.lastBattle?.outcome !== 'defeat') return 5;
+  if (isTimeBoostActive(state, 'rush')) return 10;
   const base = state.gameData.permanentUpgrades.cooldownReduction ? 50 : 60;
   const orbReduction = Math.min(5, Math.max(0, Math.round(orbEffectValue(state, 'cooldown'))));
   return Math.max(45, base - orbReduction);
+}
+
+export function purchaseTimeBoost(
+  state: MinuteVanguardState,
+  kind: TimeBoostKind,
+  durationSec: 180 | 600 | 1800,
+): CommandResult<MinuteVanguardState, 'unknown-duration' | 'already-active' | 'insufficient-gems' | 'beginner-fast-cooldown'> {
+  const option = TIME_BOOST_OPTIONS.find((candidate) => candidate.durationSec === durationSec);
+  if (option === undefined) return reject(state, 'unknown-duration');
+  if (kind === 'rush' && effectiveBattleCooldownSec(state) === 5) return reject(state, 'beginner-fast-cooldown');
+  if (isTimeBoostActive(state, kind)) return reject(state, 'already-active');
+  const spend = spendCurrency(state, ids.currency.gem, option.gemCost, `time-boost.${kind}.${durationSec}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  let cooldown = spend.state.gameData.battleCooldown;
+  if (kind === 'rush') {
+    const remaining = battleCooldown(spend.state).remainingSec;
+    if (remaining > 10) cooldown = reduceCooldown({ cooldown, simTimeSec: spend.state.simTimeSec, reductionSec: remaining - 10 });
+  }
+  const nextState: MinuteVanguardState = {
+    ...spend.state,
+    gameData: {
+      ...spend.state.gameData,
+      battleCooldown: cooldown,
+      timeBoosts: { ...spend.state.gameData.timeBoosts, [kind]: spend.state.simTimeSec + durationSec },
+    },
+  };
+  return accept(nextState, [event(nextState, 'timeBoostPurchased', `${kind}:${durationSec}`, { kind, durationSec, gemCost: option.gemCost })]);
 }
 
 export function cooldownSkipCost(state: MinuteVanguardState): number {
@@ -213,7 +257,7 @@ export function cooldownSkipCost(state: MinuteVanguardState): number {
 /** The public reference intentionally hides skip controls during the 5-second beginner cadence. */
 export function canSkipBattleCooldown(state: MinuteVanguardState): boolean {
   const preview = battleCooldown(state);
-  return !preview.ready && effectiveBattleCooldownSec(state) > 5;
+  return !preview.ready && effectiveBattleCooldownSec(state) > 5 && !isTimeBoostActive(state, 'rush');
 }
 
 export function skipBattleCooldown(
@@ -408,10 +452,10 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     streakMultiplier = streak >= 5 ? 2 : streak >= 3 ? 1.5 : streak >= 2 ? 1.2 : 1;
     const jackpotRoll = draw(nextState, ids.rng.loot); nextState = jackpotRoll.state;
     jackpotMultiplier = rollJackpotMultiplier(jackpotRoll.value);
-    const goldMultiplier = (nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'gold') / 100);
+    const goldMultiplier = (nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'gold') / 100) * (isTimeBoostActive(nextState, 'gold') ? 2 : 1);
     goldDelta = Math.max(1, Math.round(enemy.gold * rewardMultiplier * streakMultiplier * jackpotMultiplier * goldMultiplier));
     if (job.id === 'job.thief') goldDelta += Math.max(1, Math.round(stats.luck * 0.35));
-    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * (nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'exp') / 100)));
+    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * (nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'exp') / 100) * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
     nextState = grantCurrency(nextState, ids.currency.gold, goldDelta, `battle.${enemy.id}`);
 
     if (firstDefeat) {
@@ -473,7 +517,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     playerHp = leveled.leveledUp ? playerCombatStats(nextState).hp : playerHp;
   } else if (outcome === 'draw') {
     const drawRatio = nextState.gameData.permanentUpgrades.drawExpMultiplier || orbEffectValue(nextState, 'drawExp') > 0 ? 0.1 : 0.05;
-    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * drawRatio));
+    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * drawRatio * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
     const leveled = applyExperience(nextState, expGained);
     nextState = leveled.state;
     levelGrowths = leveled.growths;
@@ -954,6 +998,7 @@ export function setActivePet(
 }
 
 function normalCooldownSec(state: MinuteVanguardState): number {
+  if (isTimeBoostActive(state, 'rush')) return 10;
   const base = state.gameData.permanentUpgrades.cooldownReduction ? 50 : 60;
   return Math.max(45, base - Math.min(5, Math.max(0, Math.round(orbEffectValue(state, 'cooldown')))));
 }

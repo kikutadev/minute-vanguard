@@ -50,6 +50,8 @@
 - 同一敵30討伐で捕獲解禁、勝利時1%、通常1体/テイマー2体
 - Daily 5個 / JST 0時 / 合計20Gem
 - 下部5タブ、装備4タブ
+- Time Boost: 3分/30Gem、10分/100Gem、30分/300Gem
+- Rush: CD10秒・効果中Gem skip不可 / EXP・Gold boost: ×2
 
 ### Public behavior known, exact table not yet public-locked
 
@@ -65,7 +67,6 @@
 1. Orb replacement flow when inventory is full
 2. Titles: 52種 / 5枠 / Lv1〜5 / cost cap / 1% drop / daily shop
 3. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
-4. Rush Time: 3min/30Gem, 10min/100Gem, CD10s + EXP/Gold x2
-5. Gold bags using last-ten-win history
-6. Login bonus 7-day cycle
-7. Server boundary for real ranking / PvP / raid
+4. Gold bags using last-ten-win history
+5. Login bonus 7-day cycle
+6. Server boundary for real ranking / PvP / raid

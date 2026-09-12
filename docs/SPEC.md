@@ -131,6 +131,20 @@ Five local daily missions are implemented and reset at midnight JST:
 
 Each reward is claimable once per JST day. This preserves the 20-Gem completion cadence while the rotating mission pool is still future work.
 
+## Time Boosts
+
+Three local-only timed boosts are implemented in Shop. They use simulation time and therefore expire correctly across background/offline wall-clock advancement.
+
+- 3 minutes — 30 Gem
+- 10 minutes — 100 Gem
+- 30 minutes — 300 Gem
+- Rush Time — battle cooldown becomes 10 seconds and Gem cooldown skip is disabled
+- EXP Boost — battle EXP ×2
+- Gold Boost — battle Gold ×2
+- the same boost cannot be repurchased or extended while active
+- Rush is hidden and rejected while the beginner 5-second cadence is active
+- different boost kinds may overlap
+
 ## Persistence
 
 IndexedDB is authoritative for browser save data. Wall-clock elapsed time advances `simTimeSec` and cooldown readiness only; it never auto-resolves battles. Daily mission rollover is evaluated from wall-clock time using JST.

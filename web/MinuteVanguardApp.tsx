@@ -15,7 +15,7 @@ import {
   shopEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
-import type { BattleResult, EquipmentData, MinuteVanguardState, StatKey } from '../definitions/types';
+import type { BattleResult, EquipmentData, MinuteVanguardState, StatKey, TimeBoostKind } from '../definitions/types';
 import {
   activateRareGuarantee,
   advanceFromWallClock,
@@ -46,7 +46,9 @@ import {
   orbInventoryCount,
   orbRerollCost,
   playerCombatStats,
+  purchaseTimeBoost,
   rerollOrbStats,
+  timeBoostRemainingSec,
   setActivePet,
   skipBattleCooldown,
   toggleOrbFavorite,
@@ -185,6 +187,10 @@ export function MinuteVanguardApp() {
           const result = buyPermanentUpgrade(state, upgradeId);
           if (!result.accepted) setNotice(result.reason === 'already-owned' ? '購入済みです' : 'ジェムが足りません');
           else commit(result.state, '恒久アップグレードを購入しました');
+        }} onBuyTimeBoost={(kind, durationSec) => {
+          const result = purchaseTimeBoost(state, kind, durationSec);
+          if (!result.accepted) setNotice(result.reason === 'already-active' ? '同じブーストは効果中です' : result.reason === 'insufficient-gems' ? 'ジェムが足りません' : result.reason === 'beginner-fast-cooldown' ? '初心者5秒区間ではラッシュタイムは使えません' : 'このブーストは購入できません');
+          else commit(result.state, 'タイムブーストを開始しました');
         }} />}
         {tab === 'collection' && <CollectionView state={state} />}
         {tab === 'ranking' && <RankingView state={state} />}
@@ -258,6 +264,13 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
       <div className="battle-illustration">
         <div className="battle-sigil">⚔</div>
         <p>{state.gameData.victories < 10 ? `初心者ボーナス：あと ${10 - state.gameData.victories}体は5秒待機` : `通常待機 ${effectiveBattleCooldownSec(state)}秒`}</p>
+        <div className="active-boosts">
+          {(['rush', 'exp', 'gold'] as const).map((kind) => {
+            const remaining = timeBoostRemainingSec(state, kind);
+            if (remaining <= 0) return null;
+            return <span key={kind}>{kind === 'rush' ? '⚡RUSH' : kind === 'exp' ? '✦ EXP×2' : '◉ GOLD×2'} <b>{formatRemainingTime(remaining)}</b></span>;
+          })}
+        </div>
         {state.gameData.rareGuaranteeActive && <strong className="rare-active">次戦：RARE以上確定</strong>}
       </div>
       <button className="fight-button" onClick={props.onFight} disabled={!cooldown.ready}>
@@ -315,21 +328,50 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
   </section>;
 }
 
-function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void }>) {
+function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void }>) {
+  const [active, setActive] = useState<'permanent' | 'boost' | 'gem'>('permanent');
   return <section className="page-section shop-page">
     <h1>ショップ</h1>
-    <div className="subtabs"><button className="active">恒久強化</button><button>タイムブースト</button><button>ジェム</button></div>
-    <p className="shop-lead">一度買えばずっと有効。装備の購入は「装備」タブで行います。</p>
-    <div className="upgrade-list">
-      {permanentUpgradeDefinitions.map((upgrade) => {
-        const owned = props.state.gameData.permanentUpgrades[upgrade.id];
-        return <button key={upgrade.id} className="upgrade-card" onClick={() => props.onBuy(upgrade.id)} disabled={owned}>
-          <span className="upgrade-icon">◆</span><span><strong>{upgrade.label}</strong><small>{upgrade.description}</small></span><em>{owned ? '購入済' : `💎 ${upgrade.price.toLocaleString()}`}</em>
-        </button>;
-      })}
-    </div>
-    <div className="gold-bag-card"><strong>ゴールド袋</strong><p>直近の戦果に応じたGoldをジェムでまとめて受け取る機能。</p><button disabled>戦果データ準備中</button></div>
+    <div className="subtabs"><button className={active === 'permanent' ? 'active' : ''} onClick={() => setActive('permanent')}>恒久強化</button><button className={active === 'boost' ? 'active' : ''} onClick={() => setActive('boost')}>タイムブースト</button><button className={active === 'gem' ? 'active' : ''} onClick={() => setActive('gem')}>ジェム</button></div>
+    {active === 'permanent' && <>
+      <p className="shop-lead">一度買えばずっと有効。装備の購入は「装備」タブで行います。</p>
+      <div className="upgrade-list">
+        {permanentUpgradeDefinitions.map((upgrade) => {
+          const owned = props.state.gameData.permanentUpgrades[upgrade.id];
+          return <button key={upgrade.id} className="upgrade-card" onClick={() => props.onBuy(upgrade.id)} disabled={owned}>
+            <span className="upgrade-icon">◆</span><span><strong>{upgrade.label}</strong><small>{upgrade.description}</small></span><em>{owned ? '購入済' : `💎 ${upgrade.price.toLocaleString()}`}</em>
+          </button>;
+        })}
+      </div>
+      <div className="gold-bag-card"><strong>ゴールド袋</strong><p>直近の戦果に応じたGoldをジェムでまとめて受け取る機能。</p><button disabled>戦果データ準備中</button></div>
+    </>}
+    {active === 'boost' && <TimeBoostShop state={props.state} onBuy={props.onBuyTimeBoost} />}
+    {active === 'gem' && <div className="empty-state">ソロ版ではジェム購入ストアを接続していません。</div>}
   </section>;
+}
+
+function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void }>) {
+  const definitions: readonly { kind: TimeBoostKind; icon: string; label: string; description: string }[] = [
+    { kind: 'rush', icon: '⚡', label: 'ラッシュタイム', description: '戦闘クールダウンを10秒に短縮。効果中はGemスキップ不可。' },
+    { kind: 'exp', icon: '✦', label: 'EXPブースト', description: '戦闘で獲得するEXPを2倍にします。' },
+    { kind: 'gold', icon: '◉', label: 'Goldブースト', description: '戦闘で獲得するGoldを2倍にします。' },
+  ];
+  const durations = [
+    { durationSec: 180 as const, label: '3分', gemCost: 30 },
+    { durationSec: 600 as const, label: '10分', gemCost: 100 },
+    { durationSec: 1800 as const, label: '30分', gemCost: 300 },
+  ];
+  return <div className="time-boost-shop">
+    <p className="shop-lead">効果中は同じブーストを買い足せません。別種類は同時に使えます。</p>
+    {definitions.filter((definition) => !(definition.kind === 'rush' && effectiveBattleCooldownSec(props.state) === 5)).map((definition) => {
+      const remaining = timeBoostRemainingSec(props.state, definition.kind);
+      const active = remaining > 0;
+      return <article className={`time-boost-card ${active ? 'active' : ''}`} key={definition.kind}>
+        <header><span>{definition.icon}</span><div><strong>{definition.label}</strong><small>{definition.description}</small></div>{active && <em>{formatRemainingTime(remaining)}</em>}</header>
+        <div className="time-boost-options">{durations.map((duration) => <button key={duration.durationSec} disabled={active} onClick={() => props.onBuy(definition.kind, duration.durationSec)}><strong>{duration.label}</strong><small>💎 {duration.gemCost}</small></button>)}</div>
+      </article>;
+    })}
+  </div>;
 }
 
 function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
@@ -614,6 +656,12 @@ function nextOrbRank(rank: EquipmentData['orbRank']): string {
 
 function jobDisplayName(jobId: string): string {
   return jobs.find((job) => job.id === jobId)?.displayName ?? jobId;
+}
+
+function formatRemainingTime(totalSec: number): string {
+  const minutes = Math.floor(totalSec / 60);
+  const seconds = Math.max(0, totalSec % 60);
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 }
 
 function effectLabel(effectId: string): string {

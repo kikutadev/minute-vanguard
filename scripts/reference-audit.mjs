@@ -18,6 +18,8 @@ const checks = [
   ['patchnotes', 'ui.bottomTabs', ['ショップ・装備・バトル・コレクション・ランキング']],
   ['patchnotes', 'ui.battleFloaters', ['デイリーミッション・転職・ミミック銀行']],
   ['patchnotes', 'beginner.noSkip', ['クールダウンが5秒のあいだ', 'ジェムでスキップ', 'ラッシュタイム']],
+  ['patchnotes', 'timeBoosts.duration', ['3分版', 'ジェム30個', '10分', '100個', '30分版', '300ジェム']],
+  ['patchnotes', 'timeBoosts.effects', ['ラッシュタイム', 'クールダウンが10秒', 'EXPブーストタイム', '経験値2倍', 'ゴールドブーストタイム', 'ゴールド2倍']],
 ];
 
 const normalize = (value) => value

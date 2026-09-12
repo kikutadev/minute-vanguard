@@ -11,6 +11,8 @@ import {
   createInitialState,
   drawOrb,
   fight,
+  purchaseTimeBoost,
+  timeBoostRemainingSec,
 } from '../plugin/engine';
 
 describe('public reference parity locks', () => {
@@ -145,6 +147,68 @@ function withTestOrbs(idsForOrbs: readonly string[]): MinuteVanguardState {
     gameData: { ...initial.gameData, inventory },
   };
 }
+
+describe('time boost reference parity', () => {
+  it('rejects Rush during the beginner five-second cadence', () => {
+    const initial = createInitialState(0, 609);
+    const funded = { ...initial, currencies: { ...initial.currencies, [ids.currency.gem]: GameNumber.from(30).serialize() } };
+    const result = purchaseTimeBoost(funded, 'rush', 180);
+    expect(result.accepted).toBe(false);
+    if (result.accepted) return;
+    expect(result.reason).toBe('beginner-fast-cooldown');
+  });
+
+  it('locks 3/10/30 minute pricing and gives Rush a 10-second cooldown without skip', () => {
+    const initial = createInitialState(0, 610);
+    const prepared = {
+      ...initial,
+      currencies: { ...initial.currencies, [ids.currency.gem]: GameNumber.from(30).serialize() },
+      gameData: { ...initial.gameData, victories: 10 },
+    };
+    const rush = purchaseTimeBoost(prepared, 'rush', 180);
+    expect(rush.accepted).toBe(true);
+    if (!rush.accepted) return;
+    expect(GameNumber.deserialize(rush.state.currencies[ids.currency.gem]!).toNumber()).toBe(0);
+    expect(timeBoostRemainingSec(rush.state, 'rush')).toBe(180);
+    expect(purchaseTimeBoost(rush.state, 'rush', 600).accepted).toBe(false);
+    const battle = fight(rush.state);
+    expect(battle.accepted).toBe(true);
+    if (!battle.accepted) return;
+    expect(battleCooldown(battle.state).remainingSec).toBe(hero60Reference.timeBoosts.rushCooldownSec);
+    expect(canSkipBattleCooldown(battle.state)).toBe(false);
+  });
+
+  it('doubles both Gold and EXP without changing encounter RNG', () => {
+    const initial = createInitialState(0, 611);
+    const strong = {
+      ...initial,
+      gameData: {
+        ...initial.gameData,
+        victories: 10,
+        player: {
+          ...initial.gameData.player,
+          currentHp: 2_000,
+          baseStats: { hp: 2_000, attack: 1_000, defense: 1_000, magicAttack: 1_000, magicDefense: 1_000, luck: 10 },
+        },
+      },
+    };
+    const base = fight(strong);
+    expect(base.accepted).toBe(true);
+    const funded = { ...strong, currencies: { ...strong.currencies, [ids.currency.gem]: GameNumber.from(60).serialize() } };
+    const exp = purchaseTimeBoost(funded, 'exp', 180);
+    expect(exp.accepted).toBe(true);
+    if (!exp.accepted || !base.accepted) return;
+    const gold = purchaseTimeBoost(exp.state, 'gold', 180);
+    expect(gold.accepted).toBe(true);
+    if (!gold.accepted) return;
+    const boosted = fight(gold.state);
+    expect(boosted.accepted).toBe(true);
+    if (!boosted.accepted) return;
+    expect(boosted.state.gameData.lastBattle?.enemyId).toBe(base.state.gameData.lastBattle?.enemyId);
+    expect(boosted.state.gameData.lastBattle?.goldDelta).toBe((base.state.gameData.lastBattle?.goldDelta ?? 0) * 2);
+    expect(boosted.state.gameData.lastBattle?.expGained).toBe((base.state.gameData.lastBattle?.expGained ?? 0) * 2);
+  });
+});
 
 describe('orb management reference parity', () => {
   it('enforces the 10-slot base capacity and 100-gem one-slot expansion', () => {
