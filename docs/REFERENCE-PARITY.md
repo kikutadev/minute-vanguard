@@ -48,7 +48,7 @@
   - Evasion 3/6/9/12/15%
   - Cooldown 1/2/3/4/5秒
 - 同一敵30討伐で捕獲解禁、勝利時1%、通常1体/テイマー2体
-- Daily 5個 / JST 0時 / 合計20Gem
+- Daily 5個 / 5カテゴリ / 22候補 / JST 0時 / 達成順3・3・4・5・5Gem（合計20）
 - 下部5タブ、装備5タブ（武器 / 防具 / オーブ / ペット / 肩書き）
 - Time Boost: 3分/30Gem、10分/100Gem、30分/300Gem
 - Rush: CD10秒・効果中Gem skip不可 / EXP・Gold boost: ×2
@@ -56,6 +56,10 @@
 - 肩書き勝利ドロップ1%、日替わり3種、各300Gem・1日1回
 - 肩書きコスト上限の公開アンカー: Lv1=4 / Lv30=10 / Lv120=16 / Lv5000=40
 - 肩書きは転職で全解除、就職中の全解除は300Gem
+
+- Monster roster density: public reference is 50 monsters per level; Minute Vanguard currently implements original Lv.1/Lv.2 tables at 50 each.
+- Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
+- Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
 
 ### Public behavior known, exact table not yet public-locked
 

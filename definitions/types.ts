@@ -15,6 +15,20 @@ export type TimeBoostKind = 'rush' | 'exp' | 'gold';
 export type TimeBoostState = Readonly<Record<TimeBoostKind, number>>;
 export type TitleShopState = Readonly<{ dayKey: string; offeredTitleIds: readonly string[]; purchasedTitleIds: readonly string[] }>;
 
+export type DailyMissionProgress = Readonly<{
+  dayKey: string;
+  battles: number;
+  wins: number;
+  upgrades: number;
+  heals: number;
+  levelUps: number;
+  equipmentBuys: number;
+  discoveries: number;
+  maxStreak: number;
+  rarityWins: Readonly<Partial<Record<MonsterRarity, number>>>;
+  claimed: readonly string[];
+}>;
+
 export type OrbEffectId = 'gemDrop' | 'goldProtection' | 'gold' | 'exp' | 'drawExp' | 'regen' | 'greatGrowth' | 'critical' | 'evasion' | 'cooldown';
 
 export type EquipmentData = Readonly<{
@@ -88,6 +102,12 @@ export type LevelGrowthResult = Readonly<{
   gains: StatValues;
 }>;
 
+export type RewardBreakdownEntry = Readonly<{
+  label: string;
+  mode: 'base' | 'multiplier' | 'additive' | 'rate';
+  value: number;
+}>;
+
 export type BattleResult = Readonly<{
   battleIndex: number;
   enemyId: string;
@@ -104,6 +124,8 @@ export type BattleResult = Readonly<{
   enemyHpRemaining: number;
   goldDelta: number;
   expGained: number;
+  goldBreakdown: readonly RewardBreakdownEntry[];
+  expBreakdown: readonly RewardBreakdownEntry[];
   gemGained: number;
   streak: number;
   streakMultiplier: number;
@@ -151,12 +173,15 @@ export type MinuteVanguardGameData = Readonly<{
   draws: number;
   defeats: number;
   killCounts: Readonly<Record<string, number>>;
+  encounterCounts: Readonly<Record<string, number>>;
+  mutatedEncounterCounts: Readonly<Record<string, number>>;
   discoveredEnemyIds: readonly string[];
   lastDefeatedEnemyId: string | null;
   consecutiveDefeats: number;
   nextItemSequence: number;
   lastBattle: BattleResult | null;
   rareGuaranteeActive: boolean;
+  battleBoostActive: boolean;
   permanentUpgrades: PermanentUpgradeState;
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];
@@ -166,7 +191,7 @@ export type MinuteVanguardGameData = Readonly<{
   titles: ProgressiveTitleCollectionState;
   favoriteTitleIds: readonly string[];
   titleShop: TitleShopState;
-  missionProgress: Readonly<{ dayKey: string; battles: number; wins: number; upgrades: number; claimed: readonly string[] }>;
+  missionProgress: DailyMissionProgress;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;

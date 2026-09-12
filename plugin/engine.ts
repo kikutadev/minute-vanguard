@@ -60,6 +60,7 @@ import {
 import type {
   BattleResult,
   BattleTurn,
+  DailyMissionProgress,
   EnemyDefinition,
   EquipmentData,
   JobDefinition,
@@ -69,6 +70,7 @@ import type {
   OrbEffectId,
   OrbRank,
   PermanentStatReward,
+  RewardBreakdownEntry,
   StatKey,
   StatValues,
   TimeBoostKind,
@@ -98,6 +100,49 @@ const KNOWN_ORB_EFFECT_LADDERS: Readonly<Partial<Record<OrbEffectId, readonly nu
   evasion: [3, 6, 9, 12, 15],
   cooldown: [1, 2, 3, 4, 5],
 };
+const DAILY_MISSION_REWARDS = [3, 3, 4, 5, 5] as const;
+export type DailyMissionDefinition = Readonly<{
+  id: string;
+  category: 'battle' | 'result' | 'rarity' | 'progression' | 'collection';
+  label: string;
+  target: number;
+  metric: 'battles' | 'wins' | 'streak' | 'rarityWins' | 'levelUps' | 'heals' | 'upgrades' | 'equipmentBuys' | 'discoveries';
+  rarity?: MonsterRarity;
+}>;
+const DAILY_MISSION_GROUPS: readonly (readonly DailyMissionDefinition[])[] = [
+  [
+    { id: 'battle.20', category: 'battle', label: 'バトルを20回する', target: 20, metric: 'battles' },
+    { id: 'battle.30', category: 'battle', label: 'バトルを30回する', target: 30, metric: 'battles' },
+    { id: 'battle.40', category: 'battle', label: 'バトルを40回する', target: 40, metric: 'battles' },
+    { id: 'battle.50', category: 'battle', label: 'バトルを50回する', target: 50, metric: 'battles' },
+  ],
+  [
+    { id: 'result.win10', category: 'result', label: '10回勝利する', target: 10, metric: 'wins' },
+    { id: 'result.win15', category: 'result', label: '15回勝利する', target: 15, metric: 'wins' },
+    { id: 'result.win20', category: 'result', label: '20回勝利する', target: 20, metric: 'wins' },
+    { id: 'result.streak2', category: 'result', label: '2連勝する', target: 2, metric: 'streak' },
+    { id: 'result.streak3', category: 'result', label: '3連勝する', target: 3, metric: 'streak' },
+  ],
+  [
+    { id: 'rarity.uncommon5', category: 'rarity', label: 'アンコモン以上を5体倒す', target: 5, metric: 'rarityWins', rarity: 'uncommon' },
+    { id: 'rarity.rare2', category: 'rarity', label: 'レア以上を2体倒す', target: 2, metric: 'rarityWins', rarity: 'rare' },
+    { id: 'rarity.epic', category: 'rarity', label: 'エピック以上を1体倒す', target: 1, metric: 'rarityWins', rarity: 'epic' },
+    { id: 'rarity.legendary', category: 'rarity', label: 'レジェンダリー以上を1体倒す', target: 1, metric: 'rarityWins', rarity: 'legendary' },
+  ],
+  [
+    { id: 'progress.level1', category: 'progression', label: '1回レベルアップする', target: 1, metric: 'levelUps' },
+    { id: 'progress.level3', category: 'progression', label: '3回レベルアップする', target: 3, metric: 'levelUps' },
+    { id: 'progress.heal1', category: 'progression', label: '宿屋で1回回復する', target: 1, metric: 'heals' },
+    { id: 'progress.upgrade1', category: 'progression', label: '装備を1回強化する', target: 1, metric: 'upgrades' },
+    { id: 'progress.upgrade2', category: 'progression', label: '装備を2回強化する', target: 2, metric: 'upgrades' },
+  ],
+  [
+    { id: 'collection.buy1', category: 'collection', label: '装備を1個購入する', target: 1, metric: 'equipmentBuys' },
+    { id: 'collection.buy2', category: 'collection', label: '装備を2個購入する', target: 2, metric: 'equipmentBuys' },
+    { id: 'collection.discover1', category: 'collection', label: '新しいモンスターを1種発見する', target: 1, metric: 'discoveries' },
+    { id: 'collection.discover2', category: 'collection', label: '新しいモンスターを2種発見する', target: 2, metric: 'discoveries' },
+  ],
+];
 const currencyById = new Map(currencyDefinitions.map((definition) => [definition.id, definition]));
 
 export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): MinuteVanguardState {
@@ -149,12 +194,15 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       draws: 0,
       defeats: 0,
       killCounts: {},
+      encounterCounts: {},
+      mutatedEncounterCounts: {},
       discoveredEnemyIds: [],
       lastDefeatedEnemyId: null,
       consecutiveDefeats: 0,
       nextItemSequence: 1,
       lastBattle: null,
       rareGuaranteeActive: false,
+      battleBoostActive: false,
       permanentUpgrades: {
         freeCooldownSkips: false,
         cooldownReduction: false,
@@ -171,7 +219,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       titles: createProgressiveTitleCollection(),
       favoriteTitleIds: [],
       titleShop: { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), createProgressiveTitleCollection()), purchasedTitleIds: [] },
-      missionProgress: { dayKey: jstDayKey(nowMs), battles: 0, wins: 0, upgrades: 0, claimed: [] },
+      missionProgress: createDailyMissionProgress(jstDayKey(nowMs)),
     },
   };
 }
@@ -188,6 +236,10 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         titles: state.gameData.titles ?? createProgressiveTitleCollection(),
         favoriteTitleIds: state.gameData.favoriteTitleIds ?? [],
         titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
+        missionProgress: normalizeDailyMissionProgress(state.gameData.missionProgress, jstDayKey(nowMs)),
+        battleBoostActive: state.gameData.battleBoostActive ?? false,
+        encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
+        mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
         permanentUpgrades: { ...state.gameData.permanentUpgrades, freeCooldownSkips: state.gameData.permanentUpgrades.freeCooldownSkips ?? false },
         freeCooldownSkipUsage: state.gameData.freeCooldownSkipUsage ?? { dayKey: jstDayKey(nowMs), used: 0 },
       },
@@ -222,7 +274,7 @@ export function advanceFromWallClock(
       ...nextState,
       gameData: {
         ...nextState.gameData,
-        missionProgress: { dayKey: currentDayKey, battles: 0, wins: 0, upgrades: 0, claimed: [] },
+        missionProgress: createDailyMissionProgress(currentDayKey),
         titleShop: { dayKey: currentDayKey, offeredTitleIds: computeDailyTitleOfferIds(currentDayKey, nextState.gameData.titles), purchasedTitleIds: [] },
         freeCooldownSkipUsage: { dayKey: currentDayKey, used: 0 },
       },
@@ -330,15 +382,28 @@ export function activateRareGuarantee(
   return accept(nextState, [event(nextState, 'rareGuaranteeActivated', `${state.gameData.totalBattles}`)]);
 }
 
+export function activateBattleBoost(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'already-active' | 'insufficient-gems'> {
+  if (state.gameData.battleBoostActive) return reject(state, 'already-active');
+  const spend = spendCurrency(state, ids.currency.gem, 10, 'battle.reward-boost');
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const nextState: MinuteVanguardState = { ...spend.state, gameData: { ...spend.state.gameData, battleBoostActive: true } };
+  return accept(nextState, [event(nextState, 'battleBoostActivated', `${state.gameData.totalBattles}`)]);
+}
+
 export function playerCombatStats(state: MinuteVanguardState): StatValues {
   const flat = zeroStats();
   const percent = zeroStats();
-  for (const instanceId of Object.values(state.gameData.loadout.equipped)) {
-    if (instanceId === null || instanceId === undefined) continue;
-    const item = state.gameData.inventory[instanceId];
-    if (item?.data === undefined) continue;
-    addPartialStats(flat, item.data.flatStats);
-    addPartialStats(percent, item.data.percentStats ?? {});
+  const equipmentEnabled = state.gameData.player.jobId !== 'job.wraith';
+  if (equipmentEnabled) {
+    for (const instanceId of Object.values(state.gameData.loadout.equipped)) {
+      if (instanceId === null || instanceId === undefined) continue;
+      const item = state.gameData.inventory[instanceId];
+      if (item?.data === undefined) continue;
+      addPartialStats(flat, item.data.flatStats);
+      addPartialStats(percent, item.data.percentStats ?? {});
+    }
   }
   const output = zeroStats();
   for (const key of STAT_KEYS) {
@@ -350,6 +415,28 @@ export function playerCombatStats(state: MinuteVanguardState): StatValues {
 
 export function currentJob(state: MinuteVanguardState): JobDefinition {
   return jobs.find((job) => job.id === state.gameData.player.jobId) ?? jobs[0]!;
+}
+
+export function playerAttackType(state: MinuteVanguardState): 'physical' | 'magic' {
+  const jobId = state.gameData.player.jobId;
+  if (jobId === 'job.mage' || jobId === 'job.wraith' || jobId === 'job.hexer') return 'magic';
+  if (jobId !== 'job.tamer') return 'physical';
+  const weaponId = state.gameData.loadout.equipped.weapon;
+  if (weaponId === null || weaponId === undefined) return 'physical';
+  const weapon = state.gameData.inventory[weaponId]?.data;
+  return (weapon?.flatStats.magicAttack ?? 0) > (weapon?.flatStats.attack ?? 0) ? 'magic' : 'physical';
+}
+
+export function ninjaExecuteChance(luck: number, twentyTurnCoverage = 1): number {
+  const baseChance = Math.min(0.15, Math.max(0, luck) / 1200);
+  if (twentyTurnCoverage >= 1) return baseChance;
+  if (twentyTurnCoverage <= 0.5) return 0;
+  return baseChance * ((twentyTurnCoverage - 0.5) / 0.5);
+}
+
+export function levelGrowthMultiplier(state: MinuteVanguardState): number {
+  const ownedPetBonusPct = state.gameData.ownedPetEnemyIds.length;
+  return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct) / 100;
 }
 
 export function availableJobs(state: MinuteVanguardState): readonly JobDefinition[] {
@@ -369,6 +456,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   if (!battleCooldown(state).ready) return reject(state, 'cooldown-active');
 
   let nextState = state;
+  const battleBoostActive = state.gameData.battleBoostActive;
   const selection = selectEnemy(nextState);
   nextState = selection.state;
   const enemy = selection.enemy;
@@ -394,8 +482,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     const critRoll = draw(nextState, ids.rng.combat); nextState = critRoll.state;
     const skillRoll = draw(nextState, ids.rng.combat); nextState = skillRoll.state;
     const variance = 0.9 + attackRoll.value * 0.2;
-    const magicUser = ['job.mage', 'job.wraith', 'job.hexer'].includes(job.id)
-      || (job.id === 'job.tamer' && stats.magicAttack > stats.attack);
+    const magicUser = playerAttackType(nextState) === 'magic';
     const offensive = magicUser ? stats.magicAttack : stats.attack;
     const enemyGuard = magicUser ? Math.round(enemy.magicDefense * mutationStat) : Math.round(enemy.defense * mutationStat);
     const critChance = Math.min(0.65, 0.05 + stats.luck / (stats.luck + 240) * 0.25 + orbEffectValue(nextState, 'critical') / 100 + titleEffectValue(nextState, 'criticalChance'));
@@ -414,7 +501,9 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     let playerDamage = damage(offensive * skillMultiplier * titleDirectMultiplier, enemyGuard, variance, critical ? titleCriticalMultiplier : 1);
 
     if (job.id === 'job.ninja' && enemy.rarity !== 'boss' && enemy.rarity !== 'legendary') {
-      const executeChance = Math.min(0.18, stats.luck / 1200);
+      const maxCriticalDamage = damage(offensive * skillMultiplier * titleDirectMultiplier, enemyGuard, 1, titleCriticalMultiplier);
+      const twentyTurnCoverage = maxCriticalDamage * MAX_BATTLE_TURNS / enemyHpMax;
+      const executeChance = ninjaExecuteChance(stats.luck, twentyTurnCoverage);
       if (skillRoll.value < executeChance) {
         playerDamage = enemyHp;
         logs.push('暗殺が決まった！');
@@ -468,7 +557,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
         enemyDamage = Math.max(1, Math.round(damage(enemyPower * (enemySpecial ? 1.75 : 1), guard, 1, 1) * (1 - Math.min(0.75, titleEffectValue(nextState, 'damageReduction')))));
         playerHp = Math.max(0, playerHp - enemyDamage);
         logs.push(`${enemy.displayName}${enemySpecial ? 'の必殺技' : 'の攻撃'}！ ${enemyDamage} ダメージ！`);
-        if (job.id === 'job.wraith') wraithMultiplier = Math.max(1, wraithMultiplier / 3);
+        if (job.id === 'job.wraith') wraithMultiplier = Math.max(0.5, wraithMultiplier / 3);
       }
     }
 
@@ -496,6 +585,8 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   let jackpotMultiplier = 1;
   let goldDelta = 0;
   let expGained = 0;
+  let goldBreakdown: readonly RewardBreakdownEntry[] = [];
+  let expBreakdown: readonly RewardBreakdownEntry[] = [];
   let gemGained = 0;
   let permanentStatReward: PermanentStatReward | null = null;
   let levelGrowths: readonly LevelGrowthResult[] = [];
@@ -510,10 +601,42 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     streakMultiplier = streak >= 5 ? 2 : streak >= 3 ? 1.5 : streak >= 2 ? 1.2 : 1;
     const jackpotRoll = draw(nextState, ids.rng.loot); nextState = jackpotRoll.state;
     jackpotMultiplier = rollJackpotMultiplier(jackpotRoll.value);
-    const goldMultiplier = (nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'gold') / 100) * (1 + titleEffectValue(nextState, 'gold')) * (isTimeBoostActive(nextState, 'gold') ? 2 : 1);
-    goldDelta = Math.max(1, Math.round(enemy.gold * rewardMultiplier * streakMultiplier * jackpotMultiplier * goldMultiplier));
-    if (job.id === 'job.thief') goldDelta += Math.max(1, Math.round(stats.luck * 0.35));
-    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * (nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1) * (1 + orbEffectValue(nextState, 'exp') / 100) * (1 + titleEffectValue(nextState, 'exp')) * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
+    const permanentGoldMultiplier = nextState.gameData.permanentUpgrades.goldMultiplier ? 1.2 : 1;
+    const orbGoldMultiplier = 1 + orbEffectValue(nextState, 'gold') / 100;
+    const titleGoldMultiplier = 1 + titleEffectValue(nextState, 'gold');
+    const boostGoldMultiplier = isTimeBoostActive(nextState, 'gold') ? 2 : 1;
+    const battleGoldMultiplier = battleBoostActive ? 2 : 1;
+    const goldMultiplier = permanentGoldMultiplier * orbGoldMultiplier * titleGoldMultiplier * boostGoldMultiplier * battleGoldMultiplier;
+    const thiefBonus = job.id === 'job.thief' ? Math.max(1, Math.round(stats.luck * 0.35)) : 0;
+    goldDelta = Math.max(1, Math.round(enemy.gold * rewardMultiplier * streakMultiplier * jackpotMultiplier * goldMultiplier)) + thiefBonus;
+    goldBreakdown = [
+      { label: '基礎報酬', mode: 'base', value: enemy.gold },
+      ...(rewardMultiplier > 1 ? [{ label: '変異種', mode: 'multiplier' as const, value: rewardMultiplier }] : []),
+      ...(streakMultiplier > 1 ? [{ label: `${streak}連続討伐`, mode: 'multiplier' as const, value: streakMultiplier }] : []),
+      ...(jackpotMultiplier > 1 ? [{ label: 'JACKPOT', mode: 'multiplier' as const, value: jackpotMultiplier }] : []),
+      ...(permanentGoldMultiplier > 1 ? [{ label: '恒久強化', mode: 'multiplier' as const, value: permanentGoldMultiplier }] : []),
+      ...(orbGoldMultiplier > 1 ? [{ label: 'オーブ', mode: 'multiplier' as const, value: orbGoldMultiplier }] : []),
+      ...(titleGoldMultiplier > 1 ? [{ label: '肩書き', mode: 'multiplier' as const, value: titleGoldMultiplier }] : []),
+      ...(boostGoldMultiplier > 1 ? [{ label: 'Gold Boost', mode: 'multiplier' as const, value: boostGoldMultiplier }] : []),
+      ...(battleGoldMultiplier > 1 ? [{ label: 'Battle Boost', mode: 'multiplier' as const, value: battleGoldMultiplier }] : []),
+      ...(thiefBonus > 0 ? [{ label: '強奪', mode: 'additive' as const, value: thiefBonus }] : []),
+    ];
+
+    const permanentExpMultiplier = nextState.gameData.permanentUpgrades.expMultiplier ? 1.2 : 1;
+    const orbExpMultiplier = 1 + orbEffectValue(nextState, 'exp') / 100;
+    const titleExpMultiplier = 1 + titleEffectValue(nextState, 'exp');
+    const boostExpMultiplier = isTimeBoostActive(nextState, 'exp') ? 2 : 1;
+    const battleExpMultiplier = battleBoostActive ? 2 : 1;
+    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * permanentExpMultiplier * orbExpMultiplier * titleExpMultiplier * boostExpMultiplier * battleExpMultiplier));
+    expBreakdown = [
+      { label: '基礎経験値', mode: 'base', value: enemy.exp },
+      ...(rewardMultiplier > 1 ? [{ label: '変異種', mode: 'multiplier' as const, value: rewardMultiplier }] : []),
+      ...(permanentExpMultiplier > 1 ? [{ label: '恒久強化', mode: 'multiplier' as const, value: permanentExpMultiplier }] : []),
+      ...(orbExpMultiplier > 1 ? [{ label: 'オーブ', mode: 'multiplier' as const, value: orbExpMultiplier }] : []),
+      ...(titleExpMultiplier > 1 ? [{ label: '肩書き', mode: 'multiplier' as const, value: titleExpMultiplier }] : []),
+      ...(boostExpMultiplier > 1 ? [{ label: 'EXP Boost', mode: 'multiplier' as const, value: boostExpMultiplier }] : []),
+      ...(battleExpMultiplier > 1 ? [{ label: 'Battle Boost', mode: 'multiplier' as const, value: battleExpMultiplier }] : []),
+    ];
     nextState = grantCurrency(nextState, ids.currency.gold, goldDelta, `battle.${enemy.id}`);
 
     if (firstDefeat) {
@@ -587,7 +710,16 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     playerHp = leveled.leveledUp ? playerCombatStats(nextState).hp : playerHp;
   } else if (outcome === 'draw') {
     const drawRatio = nextState.gameData.permanentUpgrades.drawExpMultiplier || orbEffectValue(nextState, 'drawExp') > 0 ? 0.1 : 0.05;
-    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * drawRatio * (isTimeBoostActive(nextState, 'exp') ? 2 : 1)));
+    const drawBoostMultiplier = isTimeBoostActive(nextState, 'exp') ? 2 : 1;
+    const drawBattleBoostMultiplier = battleBoostActive ? 2 : 1;
+    expGained = Math.max(1, Math.round(enemy.exp * rewardMultiplier * drawRatio * drawBoostMultiplier * drawBattleBoostMultiplier));
+    expBreakdown = [
+      { label: '基礎経験値', mode: 'base', value: enemy.exp },
+      { label: '引き分け', mode: 'rate', value: drawRatio },
+      ...(rewardMultiplier > 1 ? [{ label: '変異種', mode: 'multiplier' as const, value: rewardMultiplier }] : []),
+      ...(drawBoostMultiplier > 1 ? [{ label: 'EXP Boost', mode: 'multiplier' as const, value: drawBoostMultiplier }] : []),
+      ...(drawBattleBoostMultiplier > 1 ? [{ label: 'Battle Boost', mode: 'multiplier' as const, value: drawBattleBoostMultiplier }] : []),
+    ];
     const leveled = applyExperience(nextState, expGained);
     nextState = leveled.state;
     levelGrowths = leveled.growths;
@@ -596,6 +728,11 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     const gold = goldBalance(nextState);
     const protection = Math.min(0.8, orbEffectValue(nextState, 'goldProtection') / 100);
     const loss = Math.floor(gold * 0.5 * (1 - protection));
+    goldBreakdown = [
+      { label: '戦闘前所持', mode: 'base', value: gold },
+      { label: '敗北損失', mode: 'rate', value: 0.5 },
+      ...(protection > 0 ? [{ label: 'Gold保護', mode: 'rate' as const, value: protection }] : []),
+    ];
     if (loss > 0) {
       const spent = spendCurrency(nextState, ids.currency.gold, loss, `battle.defeat.${enemy.id}`);
       if (spent.accepted) nextState = spent.state;
@@ -608,9 +745,16 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   const killCounts = outcome === 'victory'
     ? { ...nextState.gameData.killCounts, [enemy.id]: (nextState.gameData.killCounts[enemy.id] ?? 0) + 1 }
     : nextState.gameData.killCounts;
-  const discovered = nextState.gameData.discoveredEnemyIds.includes(enemy.id)
-    ? nextState.gameData.discoveredEnemyIds
-    : [...nextState.gameData.discoveredEnemyIds, enemy.id];
+  const newDiscovery = !nextState.gameData.discoveredEnemyIds.includes(enemy.id);
+  const discovered = newDiscovery
+    ? [...nextState.gameData.discoveredEnemyIds, enemy.id]
+    : nextState.gameData.discoveredEnemyIds;
+  const rarityWins = outcome === 'victory'
+    ? {
+        ...nextState.gameData.missionProgress.rarityWins,
+        [enemy.rarity]: (nextState.gameData.missionProgress.rarityWins[enemy.rarity] ?? 0) + 1,
+      }
+    : nextState.gameData.missionProgress.rarityWins;
 
   nextState = {
     ...nextState,
@@ -622,14 +766,29 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       draws: nextState.gameData.draws + (outcome === 'draw' ? 1 : 0),
       defeats: nextState.gameData.defeats + (outcome === 'defeat' ? 1 : 0),
       killCounts,
+      encounterCounts: {
+        ...nextState.gameData.encounterCounts,
+        [enemy.id]: (nextState.gameData.encounterCounts[enemy.id] ?? 0) + 1,
+      },
+      mutatedEncounterCounts: mutated
+        ? {
+            ...nextState.gameData.mutatedEncounterCounts,
+            [enemy.id]: (nextState.gameData.mutatedEncounterCounts[enemy.id] ?? 0) + 1,
+          }
+        : nextState.gameData.mutatedEncounterCounts,
       discoveredEnemyIds: discovered,
       lastDefeatedEnemyId: outcome === 'victory' ? enemy.id : nextState.gameData.lastDefeatedEnemyId,
       consecutiveDefeats: outcome === 'victory' ? streak : 0,
       rareGuaranteeActive: false,
+      battleBoostActive: false,
       missionProgress: {
         ...nextState.gameData.missionProgress,
         battles: nextState.gameData.missionProgress.battles + 1,
         wins: nextState.gameData.missionProgress.wins + (outcome === 'victory' ? 1 : 0),
+        maxStreak: Math.max(nextState.gameData.missionProgress.maxStreak, outcome === 'victory' ? streak : 0),
+        rarityWins,
+        levelUps: nextState.gameData.missionProgress.levelUps + levelGrowths.length,
+        discoveries: nextState.gameData.missionProgress.discoveries + (newDiscovery ? 1 : 0),
       },
     },
   };
@@ -661,6 +820,8 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     enemyHpRemaining: enemyHp,
     goldDelta,
     expGained,
+    goldBreakdown,
+    expBreakdown,
     gemGained,
     streak,
     streakMultiplier,
@@ -695,7 +856,17 @@ export function buyEquipment(
   if (!spend.accepted) return reject(state, 'insufficient-gold');
   const granted = grantItem(spend.state, itemDefinitionId, offer.data);
   const equipped = equipOwnedItem(granted.state, granted.itemInstanceId);
-  const nextState = equipped.accepted ? equipped.state : granted.state;
+  const equippedState = equipped.accepted ? equipped.state : granted.state;
+  const nextState: MinuteVanguardState = {
+    ...equippedState,
+    gameData: {
+      ...equippedState.gameData,
+      missionProgress: {
+        ...equippedState.gameData.missionProgress,
+        equipmentBuys: equippedState.gameData.missionProgress.equipmentBuys + 1,
+      },
+    },
+  };
   return accept(nextState, [event(nextState, 'equipmentPurchased', granted.itemInstanceId, { itemDefinitionId, price: offer.price })]);
 }
 
@@ -708,6 +879,9 @@ export function equipOwnedItem(
 ): CommandResult<MinuteVanguardState, 'unknown-item' | 'equip-rejected'> {
   const item = state.gameData.inventory[itemInstanceId];
   if (item?.data === undefined) return reject(state, 'unknown-item');
+  if (state.gameData.player.jobId === 'job.wraith') return reject(state, 'equip-rejected');
+  if (state.gameData.player.jobId === 'job.tamer' && item.data.kind === 'armor'
+      && (item.data.flatStats.magicDefense ?? 0) > (item.data.flatStats.defense ?? 0)) return reject(state, 'equip-rejected');
   const slotId = item.data.kind;
   const equipped = equipItem({ inventory: state.gameData.inventory, itemDefinitions, loadoutDefinition, loadout: state.gameData.loadout, slotId, itemInstanceId });
   if (!equipped.accepted) return reject(state, 'equip-rejected');
@@ -952,13 +1126,26 @@ export function buyPermanentUpgrade(
   return accept(nextState, [event(nextState, 'permanentUpgradePurchased', upgradeId)]);
 }
 
+export function innHealCost(state: MinuteVanguardState): number {
+  const gold = goldBalance(state);
+  if (gold <= 9) return 0;
+  return Math.min(Math.floor(gold * 0.10), state.gameData.player.level * 100);
+}
+
 export function healAtInn(state: MinuteVanguardState): CommandResult<MinuteVanguardState, 'already-full' | 'insufficient-gold'> {
   const maxHp = playerCombatStats(state).hp;
   if (state.gameData.player.currentHp >= maxHp) return reject(state, 'already-full');
-  const cost = Math.max(20, state.gameData.player.level * 8);
+  const cost = innHealCost(state);
   const spend = spendCurrency(state, ids.currency.gold, cost, 'inn.heal');
   if (!spend.accepted) return reject(state, 'insufficient-gold');
-  const nextState = { ...spend.state, gameData: { ...spend.state.gameData, player: { ...spend.state.gameData.player, currentHp: maxHp } } };
+  const nextState: MinuteVanguardState = {
+    ...spend.state,
+    gameData: {
+      ...spend.state.gameData,
+      player: { ...spend.state.gameData.player, currentHp: maxHp },
+      missionProgress: { ...spend.state.gameData.missionProgress, heals: spend.state.gameData.missionProgress.heals + 1 },
+    },
+  };
   return accept(nextState, [event(nextState, 'innHealed', `${state.gameData.player.level}`, { cost })]);
 }
 
@@ -969,7 +1156,11 @@ export function jobChangeCost(state: MinuteVanguardState): number {
 
 export function currentJobBonusRequirement(state: MinuteVanguardState): number {
   const count = state.gameData.player.jobBonusCounts[state.gameData.player.jobId] ?? 0;
-  return count === 0 ? 30 : count === 1 ? 50 : count === 2 ? 100 : 200;
+  if (count === 0) return 30;
+  if (count === 1) return 50;
+  if (count === 2) return 100;
+  const totalBonusCount = Object.values(state.gameData.player.jobBonusCounts).reduce((sum, value) => sum + value, 0);
+  return totalBonusCount < 300 ? 200 : 200 + (totalBonusCount - 299) * 10;
 }
 
 export function changeJob(
@@ -977,7 +1168,8 @@ export function changeJob(
   jobId?: string,
 ): CommandResult<MinuteVanguardState, 'level-too-low' | 'job-locked' | 'insufficient-gold'> {
   if (state.gameData.player.level < 30) return reject(state, 'level-too-low');
-  const target = availableJobs(state).find((candidate) => candidate.id === jobId) ?? availableJobs(state)[0];
+  const available = availableJobs(state);
+  const target = jobId === undefined ? available[0] : available.find((candidate) => candidate.id === jobId);
   if (target === undefined) return reject(state, 'job-locked');
   const cost = jobChangeCost(state);
   const spend = spendCurrency(state, ids.currency.gold, cost, `job.change.${target.id}`);
@@ -1009,6 +1201,10 @@ export function changeJob(
         baseStats: BASE_STATS,
         permanentStats,
       },
+      loadout: target.id === 'job.wraith' ? createLoadoutState(loadoutDefinition) : spend.state.gameData.loadout,
+      activePetEnemyIds: target.id === 'job.tamer'
+        ? spend.state.gameData.activePetEnemyIds
+        : spend.state.gameData.activePetEnemyIds.slice(0, 1),
       titles: clearEquippedProgressiveTitles(spend.state.gameData.titles),
     },
   };
@@ -1144,22 +1340,46 @@ export function toggleTitleFavorite(state: MinuteVanguardState, titleId: string)
   return { ...state, gameData: { ...state.gameData, favoriteTitleIds } };
 }
 
+export function dailyMissions(state: MinuteVanguardState): readonly DailyMissionDefinition[] {
+  const dayKey = state.gameData.missionProgress.dayKey;
+  return DAILY_MISSION_GROUPS.map((group, index) => {
+    const pick = hashString(`${dayKey}:mission:${index}`) % group.length;
+    return group[pick]!;
+  });
+}
+
+export function dailyMissionValue(state: MinuteVanguardState, mission: DailyMissionDefinition): number {
+  const progress = state.gameData.missionProgress;
+  switch (mission.metric) {
+    case 'battles': return progress.battles;
+    case 'wins': return progress.wins;
+    case 'streak': return progress.maxStreak;
+    case 'levelUps': return progress.levelUps;
+    case 'heals': return progress.heals;
+    case 'upgrades': return progress.upgrades;
+    case 'equipmentBuys': return progress.equipmentBuys;
+    case 'discoveries': return progress.discoveries;
+    case 'rarityWins': {
+      const threshold = rarityOrder.indexOf(mission.rarity ?? 'common');
+      return rarityOrder.reduce((sum, rarity, index) => sum + (index >= threshold ? progress.rarityWins[rarity] ?? 0 : 0), 0);
+    }
+  }
+}
+
+export function dailyMissionNextReward(state: MinuteVanguardState): number {
+  return DAILY_MISSION_REWARDS[Math.min(DAILY_MISSION_REWARDS.length - 1, state.gameData.missionProgress.claimed.length)] ?? 0;
+}
+
 export function claimDailyMission(
   state: MinuteVanguardState,
   missionId: string,
 ): CommandResult<MinuteVanguardState, 'unknown-mission' | 'not-complete' | 'already-claimed'> {
-  const missions = {
-    battles: { complete: state.gameData.missionProgress.battles >= 3, reward: 3 },
-    wins: { complete: state.gameData.missionProgress.wins >= 2, reward: 3 },
-    upgrades: { complete: state.gameData.missionProgress.upgrades >= 1, reward: 4 },
-    level: { complete: state.gameData.player.level >= 5, reward: 5 },
-    discoveries: { complete: state.gameData.discoveredEnemyIds.length >= 3, reward: 5 },
-  } as const;
-  const mission = missions[missionId as keyof typeof missions];
+  const mission = dailyMissions(state).find((candidate) => candidate.id === missionId);
   if (mission === undefined) return reject(state, 'unknown-mission');
   if (state.gameData.missionProgress.claimed.includes(missionId)) return reject(state, 'already-claimed');
-  if (!mission.complete) return reject(state, 'not-complete');
-  const rewarded = grantCurrency(state, ids.currency.gem, mission.reward, `mission.daily.${missionId}`);
+  if (dailyMissionValue(state, mission) < mission.target) return reject(state, 'not-complete');
+  const reward = dailyMissionNextReward(state);
+  const rewarded = grantCurrency(state, ids.currency.gem, reward, `mission.daily.${missionId}`);
   const nextState: MinuteVanguardState = {
     ...rewarded,
     gameData: {
@@ -1170,7 +1390,7 @@ export function claimDailyMission(
       },
     },
   };
-  return accept(nextState, [event(nextState, 'dailyMissionClaimed', missionId, { reward: mission.reward })]);
+  return accept(nextState, [event(nextState, 'dailyMissionClaimed', missionId, { reward, completedCount: nextState.gameData.missionProgress.claimed.length })]);
 }
 
 export function setActivePet(
@@ -1240,8 +1460,10 @@ function applyExperience(state: MinuteVanguardState, gained: number): Readonly<{
     for (const key of STAT_KEYS) {
       const roll = draw(nextState, ids.rng.growth); nextState = roll.state;
       const variation = 0.7 + roll.value * 0.6;
-      const permanentGrowth = 1 + state.gameData.player.growthBonusPct / 100;
-      gains[key] = Math.max(1, Math.round(job.growth[key] * variation * permanentGrowth * (greatGrowth ? 2 : 1)));
+      const permanentGrowth = levelGrowthMultiplier(state);
+      gains[key] = job.growth[key] === 0
+        ? 0
+        : Math.max(1, Math.round(job.growth[key] * variation * permanentGrowth * (greatGrowth ? 2 : 1)));
       baseStats[key] += gains[key];
     }
     growths.push({ level, greatGrowth, gains });
@@ -1388,6 +1610,7 @@ function grantItem(state: MinuteVanguardState, definitionId: string, data: Equip
 }
 
 function orbEffectValue(state: MinuteVanguardState, effectId: string): number {
+  if (state.gameData.player.jobId === 'job.wraith') return 0;
   const orbId = state.gameData.loadout.equipped.orb;
   if (orbId === null || orbId === undefined) return 0;
   const orb = state.gameData.inventory[orbId]?.data;
@@ -1445,17 +1668,52 @@ function rollJackpotMultiplier(value: number): number {
   return 1;
 }
 
-function gamblerMultiplier(value: number): number {
-  if (value < 0.002) return 100;
-  if (value < 0.02) return 12;
-  if (value < 0.12) return 5;
-  if (value < 0.42) return 2;
-  if (value < 0.72) return 1;
+/**
+ * Current public behavior exposes the seven multipliers and ~3.2x expectation,
+ * but not the exact probability table. These probabilities are Minute Vanguard
+ * balance chosen to preserve that public shape without inventing reference odds.
+ */
+export function gamblerMultiplier(value: number): number {
+  if (value < 0.009) return 100;
+  if (value < 0.056) return 20;
+  if (value < 0.130) return 8;
+  if (value < 0.250) return 3;
+  if (value < 0.470) return 1;
+  if (value < 0.720) return 0.5;
   return 0.2;
 }
 
+export const gamblerExpectedMultiplier =
+  100 * .009 + 20 * .047 + 8 * .074 + 3 * .12 + 1 * .22 + .5 * .25 + .2 * .28;
+
 function damage(power: number, defense: number, variance: number, multiplier: number): number {
   return Math.max(1, Math.round(Math.max(1, power - defense * 0.55) * variance * multiplier));
+}
+
+function createDailyMissionProgress(dayKey: string): DailyMissionProgress {
+  return {
+    dayKey,
+    battles: 0,
+    wins: 0,
+    upgrades: 0,
+    heals: 0,
+    levelUps: 0,
+    equipmentBuys: 0,
+    discoveries: 0,
+    maxStreak: 0,
+    rarityWins: {},
+    claimed: [],
+  };
+}
+
+function normalizeDailyMissionProgress(progress: DailyMissionProgress, dayKey: string): DailyMissionProgress {
+  if (progress.dayKey !== dayKey) return createDailyMissionProgress(dayKey);
+  return {
+    ...createDailyMissionProgress(dayKey),
+    ...progress,
+    rarityWins: progress.rarityWins ?? {},
+    claimed: progress.claimed ?? [],
+  };
 }
 
 function jstDayKey(wallClockMs: number): string {

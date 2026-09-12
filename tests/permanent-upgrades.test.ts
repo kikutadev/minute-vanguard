@@ -46,7 +46,11 @@ describe('permanent upgrade reference behavior', () => {
     expect(fourthBattle.accepted).toBe(true);
     if (!fourthBattle.accepted) return;
     expect(cooldownSkipCost(fourthBattle.state)).toBeGreaterThan(0);
-    const fourthSkip = skipBattleCooldown(fourthBattle.state);
+    const noGems = {
+      ...fourthBattle.state,
+      currencies: { ...fourthBattle.state.currencies, [ids.currency.gem]: GameNumber.from(0).serialize() },
+    };
+    const fourthSkip = skipBattleCooldown(noGems);
     expect(fourthSkip.accepted).toBe(false);
     if (fourthSkip.accepted) return;
     expect(fourthSkip.reason).toBe('insufficient-gems');

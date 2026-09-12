@@ -128,9 +128,15 @@ Lv.30 unlocks job change. Current job set:
 - Tamer
 - Hexer
 
-Each job owns product-specific combat behavior. Job change resets Level/EXP/base growth to the new run while retaining equipment, Gem, Gold, codex and kill counts. Permanent bonus eligibility uses the current job's successful-bonus count and escalating level requirement. Successful bonuses add permanent HP and global growth rate.
+Each job owns product-specific combat behavior. Ninja assassination is capped at 15% and is suppressed for enemies outside plausible 20-turn reach. Gambler uses the current seven multiplier outcomes (0.2/0.5/1/3/8/20/100; exact public odds are not copied, Minute Vanguard owns an approximately 3.2× expected table). Wraith ignores equipment, grows only HP/MAT and uses its accumulating/decaying magic multiplier. Tamer supports physical sword / magical staff attacks, physical armor, two pets, stronger pet damage and capture.
 
-Wraith requires 10 total job changes. Tamer requires 10 owned pets.
+Job change resets Level/EXP/base growth while retaining owned equipment, Gem, Gold, codex and kill counts. Permanent bonus eligibility is 30/50/100/200 by successful bonuses for that job; after 300 total successful awards, the fourth-plus requirement increases by 10 levels per additional award. Growth bonus awards step from +5% to +4% to +3% across the current total-award bands. Wraith requires 10 total job changes. Tamer requires 10 owned pets.
+
+## Monster roster / codex
+
+The current solo build has 100 original monsters: 50 in Monster Lv.1 and 50 in Monster Lv.2. Existing legacy IDs are retained for save compatibility. Each level contains every rarity, while encounter rarity is rolled separately so roster size does not make rare/boss enemies artificially common. During the first ten successful defeats, natural encounters are restricted to Common/Uncommon unless the player explicitly activates Rare Guarantee.
+
+The codex is split by monster level and records encounters, defeats, mutated encounters, capture eligibility and captured state.
 
 ## Pets
 
@@ -145,15 +151,9 @@ Full pet leveling and pet gacha are future product work.
 
 ## Daily missions
 
-Five local daily missions are implemented and reset at midnight JST:
+Five local daily missions are selected deterministically for each JST day. Every player/date gets one mission from each of five categories: battle count, battle results/streak, monster rarity, progression, and a solo collection/equipment category. Minute Vanguard has 22 original variants across those groups; the online-arena slot from the reference is deliberately replaced so all five are completable in solo mode.
 
-1. Battle 3 times — 3 Gem
-2. Win 2 times — 3 Gem
-3. Upgrade equipment once — 4 Gem
-4. Reach Lv.5 — 5 Gem
-5. Discover 3 monsters — 5 Gem
-
-Each reward is claimable once per JST day. This preserves the 20-Gem completion cadence while the rotating mission pool is still future work.
+Rewards are based on number claimed that day: 3 / 3 / 4 / 5 / 5 Gem (20 total). All progress and claims reset at midnight JST. Battle-count targets are tuned around 20–50 fights so the full set is a meaningful session rather than a few-minute checklist.
 
 ## Time Boosts
 

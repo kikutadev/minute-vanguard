@@ -16,9 +16,10 @@ import {
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
-import type { BattleResult, EquipmentData, MinuteVanguardState, StatKey, TimeBoostKind } from '../definitions/types';
+import type { BattleResult, EquipmentData, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
   activateRareGuarantee,
+  activateBattleBoost,
   advanceFromWallClock,
   availableJobs,
   battleCooldown,
@@ -35,6 +36,9 @@ import {
   discardItem,
   drawOrb,
   dailyTitleOffers,
+  dailyMissions,
+  dailyMissionNextReward,
+  dailyMissionValue,
   effectiveBattleCooldownSec,
   expandOrbCapacity,
   equipOwnedItem,
@@ -174,6 +178,10 @@ export function MinuteVanguardApp() {
           const result = activateRareGuarantee(state);
           if (!result.accepted) setNotice(result.reason === 'already-active' ? 'レア確定はすでに有効です' : 'ジェムが足りません');
           else commit(result.state, '次の戦闘はレア以上が確定しました');
+        }} onBoost={() => {
+          const result = activateBattleBoost(state);
+          if (!result.accepted) setNotice(result.reason === 'already-active' ? 'Battle Boostはすでに有効です' : 'ジェムが足りません');
+          else commit(result.state, '次の戦闘はEXP・Goldが2倍になります');
         }} onSkip={() => {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
@@ -288,7 +296,7 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string; onFight: () => void; onRare: () => void; onSkip: () => void; onMission: () => void; onJob: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMission: () => void; onJob: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -308,13 +316,19 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
             return <span key={kind}>{kind === 'rush' ? '⚡RUSH' : kind === 'exp' ? '✦ EXP×2' : '◉ GOLD×2'} <b>{formatRemainingTime(remaining)}</b></span>;
           })}
         </div>
-        {state.gameData.rareGuaranteeActive && <strong className="rare-active">次戦：RARE以上確定</strong>}
+        {(state.gameData.rareGuaranteeActive || state.gameData.battleBoostActive) && <div className="next-battle-flags">
+          {state.gameData.rareGuaranteeActive && <strong className="rare-active">RARE以上</strong>}
+          {state.gameData.battleBoostActive && <strong className="boost-active">EXP/GOLD ×2</strong>}
+        </div>}
       </div>
       <button className="fight-button" onClick={props.onFight} disabled={!cooldown.ready}>
         {cooldown.ready ? <><b>⚔ 戦闘する</b><span>1戦だけ挑む</span></> : <><b>{cooldown.remainingSec}秒</b><span>次の戦闘まで</span></>}
       </button>
       {!cooldown.ready && canSkipBattleCooldown(state) && <button className="skip-button" onClick={props.onSkip}>{freeSkips > 0 ? `無料スキップ · 本日あと ${freeSkips}/3` : `💎 ${skipCost} で待ち時間をスキップ`}</button>}
-      <button className={`rare-button ${state.gameData.rareGuaranteeActive ? 'active' : ''}`} onClick={props.onRare} disabled={state.gameData.rareGuaranteeActive}>💎10 レア確定</button>
+      <div className="battle-prep-actions">
+        <button className={`rare-button ${state.gameData.rareGuaranteeActive ? 'active' : ''}`} onClick={props.onRare} disabled={state.gameData.rareGuaranteeActive}>💎10 レア確定</button>
+        <button className={`boost-button ${state.gameData.battleBoostActive ? 'active' : ''}`} onClick={props.onBoost} disabled={state.gameData.battleBoostActive}>💎10 EXP/GOLD ×2</button>
+      </div>
     </div>
 
     {last !== null && <div className="last-result-card">
@@ -324,7 +338,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
     </div>}
 
     <div className="quick-actions">
-      <button onClick={props.onMission}><span>✓</span><small>ミッション</small><em>{Math.min(5, Number(state.gameData.missionProgress.battles >= 3) + Number(state.gameData.missionProgress.wins >= 2) + Number(state.gameData.missionProgress.upgrades >= 1) + Number(state.gameData.player.level >= 5) + Number(state.gameData.discoveredEnemyIds.length >= 3))}/5</em></button>
+      <button onClick={props.onMission}><span>✓</span><small>ミッション</small><em>{dailyMissions(state).filter((mission) => dailyMissionValue(state, mission) >= mission.target).length}/5</em></button>
       <button onClick={props.onJob}><span>♻</span><small>転職</small>{state.gameData.player.level >= 30 && <em>!</em>}</button>
       <button disabled title="ミミック銀行は確率仕様を確認してから接続します"><span>🎭</span><small>ミミック銀行</small></button>
     </div>
@@ -432,18 +446,29 @@ function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kin
 }
 
 function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
+  const unlockedMaxLevel = state.gameData.player.level >= 30 ? 2 : 1;
+  const [monsterLevel, setMonsterLevel] = useState<1 | 2>(unlockedMaxLevel);
+  const levelEnemies = enemies.filter((enemy) => enemy.monsterLevel === monsterLevel);
+  const discovered = levelEnemies.filter((enemy) => state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
+  const kills = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.killCounts[enemy.id] ?? 0), 0);
+  const encounters = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.encounterCounts[enemy.id] ?? 0), 0);
   return <section className="page-section collection-page">
     <h1>コレクション</h1>
-    <div className="collection-summary"><div><strong>{state.gameData.discoveredEnemyIds.length}</strong><span>/ {enemies.length} 発見</span></div><div><strong>{Object.values(state.gameData.killCounts).reduce((sum, count) => sum + count, 0)}</strong><span>総討伐</span></div></div>
+    <div className="monster-level-tabs"><button className={monsterLevel === 1 ? 'active' : ''} onClick={() => setMonsterLevel(1)}>Lv.1 <small>{enemies.filter((e) => e.monsterLevel === 1 && state.gameData.discoveredEnemyIds.includes(e.id)).length}/50</small></button><button className={monsterLevel === 2 ? 'active' : ''} disabled={unlockedMaxLevel < 2} onClick={() => setMonsterLevel(2)}>Lv.2 <small>{unlockedMaxLevel < 2 ? 'Lv.30で解放' : `${enemies.filter((e) => e.monsterLevel === 2 && state.gameData.discoveredEnemyIds.includes(e.id)).length}/50`}</small></button></div>
+    <div className="collection-summary"><div><strong>{discovered}</strong><span>/ 50 発見</span></div><div><strong>{encounters}</strong><span>遭遇</span></div><div><strong>{kills}</strong><span>討伐</span></div></div>
     <div className="encyclopedia-grid">
-      {enemies.map((enemy) => {
+      {levelEnemies.map((enemy) => {
         const seen = state.gameData.discoveredEnemyIds.includes(enemy.id);
-        const kills = state.gameData.killCounts[enemy.id] ?? 0;
-        return <article className={`monster-card ${seen ? '' : 'locked'}`} key={enemy.id}>
+        const enemyKills = state.gameData.killCounts[enemy.id] ?? 0;
+        const enemyEncounters = state.gameData.encounterCounts[enemy.id] ?? 0;
+        const mutatedEncounters = state.gameData.mutatedEncounterCounts[enemy.id] ?? 0;
+        const captured = state.gameData.ownedPetEnemyIds.includes(enemy.id);
+        return <article className={`monster-card ${seen ? '' : 'locked'} ${captured ? 'captured' : ''}`} key={enemy.id}>
           <span className="monster-glyph">{seen ? enemy.glyph : '?'}</span>
           <strong>{seen ? enemy.displayName : '???'}</strong>
-          <small>{seen ? `${enemy.rarity.toUpperCase()} · 討伐 ${kills}` : '未発見'}</small>
-          {seen && <em>{kills >= 30 ? '捕獲解禁' : `捕獲まで ${30 - kills}`}</em>}
+          <small>{seen ? enemy.rarity.toUpperCase() : '未発見'}</small>
+          {seen && <div className="monster-record"><span>遭遇 {enemyEncounters}</span><span>討伐 {enemyKills}</span>{mutatedEncounters > 0 && <span>変異 {mutatedEncounters}</span>}</div>}
+          {seen && <em>{captured ? '✓ 捕獲済' : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
         </article>;
       })}
     </div>
@@ -531,6 +556,10 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
     {complete && <div className={`battle-reward-panel ${props.result.outcome}`}>
       <h2>{props.result.outcome === 'victory' ? 'VICTORY' : props.result.outcome === 'draw' ? 'DRAW' : 'DEFEAT'}</h2>
       <div className="reward-row"><span>{props.result.goldDelta >= 0 ? `+${props.result.goldDelta.toLocaleString()} G` : `${props.result.goldDelta.toLocaleString()} G`}</span><span>+{props.result.expGained.toLocaleString()} EXP</span>{props.result.gemGained > 0 && <span>+{props.result.gemGained} 💎</span>}</div>
+      {(props.result.goldBreakdown.length > 0 || props.result.expBreakdown.length > 0) && <div className="reward-breakdown-grid">
+        <RewardBreakdown title="GOLD" total={props.result.goldDelta} entries={props.result.goldBreakdown} />
+        <RewardBreakdown title="EXP" total={props.result.expGained} entries={props.result.expBreakdown} />
+      </div>}
       {props.result.streakMultiplier > 1 && <p>🔥 {props.result.streak}連続討伐 ×{props.result.streakMultiplier}</p>}
       {props.result.jackpotMultiplier > 1 && <p className="gold-highlight">JACKPOT ×{props.result.jackpotMultiplier}</p>}
       {props.result.permanentStatReward && <p className="purple-highlight">恒久 {STAT_LABELS[props.result.permanentStatReward.stat]} +{props.result.permanentStatReward.amount}</p>}
@@ -541,6 +570,18 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
       <button className="modal-primary" onClick={props.onClose}>閉じる</button>
     </div>}
   </section></div>;
+}
+
+function RewardBreakdown(props: Readonly<{ title: string; total: number; entries: readonly RewardBreakdownEntry[] }>) {
+  if (props.entries.length === 0) return <div className="reward-breakdown empty"><header><strong>{props.title}</strong><b>{props.total.toLocaleString()}</b></header><small>変化なし</small></div>;
+  return <div className="reward-breakdown"><header><strong>{props.title}</strong><b>{props.total.toLocaleString()}</b></header>{props.entries.map((entry, index) => <div key={`${entry.label}-${index}`}><span>{entry.label}</span><em>{formatRewardBreakdownValue(entry)}</em></div>)}</div>;
+}
+
+function formatRewardBreakdownValue(entry: RewardBreakdownEntry): string {
+  if (entry.mode === 'base') return entry.value.toLocaleString();
+  if (entry.mode === 'additive') return `+${entry.value.toLocaleString()}`;
+  if (entry.mode === 'rate') return `${Math.round(entry.value * 100)}%`;
+  return `×${Number.isInteger(entry.value) ? entry.value : entry.value.toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}`;
 }
 
 function Combatant(props: Readonly<{ side: 'enemy' | 'player'; name: string; glyph: string; hp: number; maxHp: number; attacking: boolean; hit: boolean; defeated: boolean }>) {
@@ -720,18 +761,20 @@ function OrbCombineModal(props: Readonly<{ state: MinuteVanguardState; onClose: 
 }
 
 function MissionModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onClaim: (missionId: string) => void }>) {
-  const entries = [
-    ['battles', 'バトルを3回する', props.state.gameData.missionProgress.battles, 3, 3],
-    ['wins', '2回勝利する', props.state.gameData.missionProgress.wins, 2, 3],
-    ['upgrades', '装備を1回強化する', props.state.gameData.missionProgress.upgrades, 1, 4],
-    ['level', 'Lv.5に到達する', props.state.gameData.player.level, 5, 5],
-    ['discoveries', 'モンスターを3種発見する', props.state.gameData.discoveredEnemyIds.length, 3, 5],
-  ] as const;
-  return <ModalFrame title="デイリーミッション" onClose={props.onClose}><p className="modal-description">毎日0時(JST)に更新。5個達成・受取で合計20ジェム。</p><div className="mission-list">{entries.map(([id, label, value, target, reward]) => {
-    const done = value >= target;
-    const claimed = props.state.gameData.missionProgress.claimed.includes(id);
-    return <div key={id} className={done ? 'done' : ''}><span>{claimed ? '✓' : done ? '!' : '○'}</span><strong>{label}</strong><small>{Math.min(value, target)} / {target}</small><button disabled={!done || claimed} onClick={() => props.onClaim(id)}>{claimed ? '受取済' : `💎${reward} 受取`}</button></div>;
-  })}</div></ModalFrame>;
+  const missions = dailyMissions(props.state);
+  const claimedCount = props.state.gameData.missionProgress.claimed.length;
+  const nextReward = dailyMissionNextReward(props.state);
+  return <ModalFrame title="デイリーミッション" onClose={props.onClose}>
+    <p className="modal-description">毎日0時(JST)に5カテゴリから1個ずつ更新。達成した個数に応じて 💎3 / 3 / 4 / 5 / 5、合計20ジェム。</p>
+    <div className="daily-reward-track">{[3, 3, 4, 5, 5].map((reward, index) => <span key={index} className={index < claimedCount ? 'claimed' : index === claimedCount ? 'next' : ''}>{index < claimedCount ? '✓' : index + 1}<small>💎{reward}</small></span>)}</div>
+    <div className="mission-list">{missions.map((mission) => {
+      const value = dailyMissionValue(props.state, mission);
+      const done = value >= mission.target;
+      const claimed = props.state.gameData.missionProgress.claimed.includes(mission.id);
+      return <div key={mission.id} className={done ? 'done' : ''}><span>{claimed ? '✓' : done ? '!' : '○'}</span><strong>{mission.label}</strong><small>{Math.min(value, mission.target)} / {mission.target}</small><button disabled={!done || claimed} onClick={() => props.onClaim(mission.id)}>{claimed ? '受取済' : `💎${nextReward} 受取`}</button></div>;
+    })}</div>
+    <p className="modal-description">本日 {claimedCount}/5 受取済。ソロ版ではオンライン対戦ミッションの代わりに装備・図鑑系のカテゴリが出ます。</p>
+  </ModalFrame>;
 }
 
 function JobModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onChange: (jobId: string) => void }>) {

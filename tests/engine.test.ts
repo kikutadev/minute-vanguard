@@ -9,6 +9,7 @@ import {
   changeJob,
   claimDailyMission,
   createInitialState,
+  dailyMissions,
   drawOrb,
   fight,
   setActivePet,
@@ -128,19 +129,20 @@ describe('Minute Vanguard / Hero60-style vertical slice', () => {
 
   it('claims completed daily missions once and resets progress at JST midnight', () => {
     const initial = createInitialState(0, 55);
+    const battleMission = dailyMissions(initial)[0]!;
     const completed = {
       ...initial,
       gameData: {
         ...initial.gameData,
-        missionProgress: { ...initial.gameData.missionProgress, battles: 3 },
+        missionProgress: { ...initial.gameData.missionProgress, battles: battleMission.target },
       },
     };
-    const claimed = claimDailyMission(completed, 'battles');
+    const claimed = claimDailyMission(completed, battleMission.id);
     expect(claimed.accepted).toBe(true);
     if (!claimed.accepted) return;
     expect(GameNumber.deserialize(claimed.state.currencies[ids.currency.gem]!).toNumber()).toBe(3);
-    expect(claimed.state.gameData.missionProgress.claimed).toContain('battles');
-    const duplicate = claimDailyMission(claimed.state, 'battles');
+    expect(claimed.state.gameData.missionProgress.claimed).toContain(battleMission.id);
+    const duplicate = claimDailyMission(claimed.state, battleMission.id);
     expect(duplicate.accepted).toBe(false);
 
     const nextDay = advanceFromWallClock(claimed.state, 24 * 60 * 60 * 1_000 + 1).state;

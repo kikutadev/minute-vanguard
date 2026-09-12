@@ -30,9 +30,10 @@ Implemented in the current build:
 - Equipment-tab buy / equip / +1〜+5 upgrade / discard flow
 - F〜SSS orb gacha and special effects
 - nine jobs and Lv.30 job change with permanent-growth conditions
-- five claimable daily missions with JST-midnight reset
+- five deterministic JST-day missions selected from a 22-variant / five-category solo pool; 20 Gem daily total
 - 30-kill pet capture eligibility, 1% capture, active pet follow-up attack
-- collection/codex view
+- 100 original monsters across Lv.1/Lv.2 (50 each), with encounter/defeat/mutation/capture codex records
+- next-battle Battle Boost (10 Gem, EXP/Gold ×2) and reward multiplier breakdown
 - IndexedDB save and wall-clock cooldown progression
 - same-core headless simulator
 - GitHub Pages workflow that uploads `dist/` only

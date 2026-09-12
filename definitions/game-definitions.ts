@@ -55,26 +55,143 @@ export const jobs: readonly JobDefinition[] = [
   { id: 'job.mage', displayName: '魔法使い', skillName: '魔法連鎖', skillDescription: '35%で魔法攻撃がもう1回発動。', growth: stats(8, 1, 1, 5, 3, 2), unlock: 'always' },
   { id: 'job.thief', displayName: '盗賊', skillName: '強奪', skillDescription: '勝利時、LUKに応じて追加ゴールドを獲得。', growth: stats(9, 3, 2, 1, 2, 5), unlock: 'always' },
   { id: 'job.priest', displayName: '僧侶', skillName: '回復の祈り', skillDescription: '毎ターン最大HPの5%を回復。', growth: stats(11, 1, 2, 3, 5, 2), unlock: 'always' },
-  { id: 'job.ninja', displayName: '忍者', skillName: '分身', skillDescription: '30%で敵の攻撃を回避。LUKも高く伸びる。', growth: stats(8, 4, 2, 1, 2, 5), unlock: 'always' },
-  { id: 'job.gambler', displayName: '賭博師', skillName: 'イカサマダンス', skillDescription: '攻撃倍率が毎ターン大きく揺れる。', growth: stats(8, 3, 2, 3, 2, 6), unlock: 'always' },
-  { id: 'job.wraith', displayName: '幽鬼', skillName: '怨念蓄積', skillDescription: '70%回避。長期戦ほど魔法攻撃が増幅。', growth: stats(7, 1, 1, 6, 2, 3), unlock: 'job-change-10' },
-  { id: 'job.tamer', displayName: 'テイマー', skillName: '多頭飼い', skillDescription: 'ペット攻撃を強化し、条件を満たすと2体編成。', growth: stats(10, 3, 2, 3, 2, 3), unlock: 'pet-10' },
+  { id: 'job.ninja', displayName: '忍者', skillName: '分身＆暗殺', skillDescription: '30%回避＋LUK依存、最大15%でboss/legendary以外を即死。', growth: stats(8, 4, 2, 1, 2, 5), unlock: 'always' },
+  { id: 'job.gambler', displayName: '賭博師', skillName: 'イカサマダンス', skillDescription: '毎ターン0.2〜100倍の7段階。期待値は約3.2倍。', growth: stats(8, 3, 2, 3, 2, 6), unlock: 'always' },
+  { id: 'job.wraith', displayName: '幽鬼', skillName: '怨念蓄積', skillDescription: '全装備無効。70%回避、魔力は毎ターン×1.5・被弾で1/3（最低0.5倍）。', growth: stats(7, 0, 0, 6, 0, 0), unlock: 'job-change-10' },
+  { id: 'job.tamer', displayName: 'テイマー', skillName: '多頭飼い', skillDescription: 'ペット2体・攻撃+40%。剣は物理、杖なら自分も魔法攻撃。', growth: stats(10, 3, 2, 3, 2, 3), unlock: 'pet-10' },
   { id: 'job.hexer', displayName: '呪術師', skillName: '呪詛', skillDescription: 'ターンごとに呪いを蓄積し、防御無視ダメージ。', growth: stats(9, 1, 2, 5, 4, 2), unlock: 'always' },
 ];
 
-export const enemies: readonly EnemyDefinition[] = [
-  { id: 'enemy.pebble', displayName: '妙に硬い石ころ', glyph: '🪨', rarity: 'common', monsterLevel: 1, hp: 42, attack: 7, defense: 2, magicAttack: 0, magicDefense: 1, luck: 3, exp: 18, gold: 20, gemDropChance: .005, orbDropChance: .04, specialChance: .01, attackType: 'physical', quote: 'そこにいるだけで道をふさぐ。' },
-  { id: 'enemy.alarm', displayName: '止まらない目覚まし', glyph: '⏰', rarity: 'common', monsterLevel: 1, hp: 50, attack: 8, defense: 2, magicAttack: 0, magicDefense: 2, luck: 4, exp: 20, gold: 24, gemDropChance: .005, orbDropChance: .045, specialChance: .02, attackType: 'physical', quote: 'あと5分、を許さない。' },
-  { id: 'enemy.crowd', displayName: '朝の満員馬車', glyph: '🚃', rarity: 'uncommon', monsterLevel: 1, hp: 62, attack: 10, defense: 4, magicAttack: 0, magicDefense: 3, luck: 5, exp: 27, gold: 34, gemDropChance: .015, orbDropChance: .065, specialChance: .04, attackType: 'physical', quote: '逃げ場が、ない。' },
-  { id: 'enemy.cold_soup', displayName: '冷めきった夕食', glyph: '🥣', rarity: 'common', monsterLevel: 1, hp: 55, attack: 8, defense: 3, magicAttack: 0, magicDefense: 3, luck: 4, exp: 22, gold: 26, gemDropChance: .005, orbDropChance: .045, specialChance: .02, attackType: 'physical', quote: '温め直す気力も奪ってくる。' },
-  { id: 'enemy.broken_sheet', displayName: '壊れた集計表', glyph: '📊', rarity: 'rare', monsterLevel: 1, hp: 82, attack: 6, defense: 5, magicAttack: 15, magicDefense: 7, luck: 8, exp: 42, gold: 62, gemDropChance: .05, orbDropChance: .11, specialChance: .08, attackType: 'magic', quote: '#REF! がこちらを見ている。' },
-  { id: 'enemy.dead_wifi', displayName: '圏外の魔導網', glyph: '📡', rarity: 'uncommon', monsterLevel: 1, hp: 70, attack: 5, defense: 3, magicAttack: 13, magicDefense: 6, luck: 6, exp: 34, gold: 46, gemDropChance: .015, orbDropChance: .075, specialChance: .06, attackType: 'magic', quote: 'あと一歩だけ届かない。' },
-  { id: 'enemy.deadline', displayName: '締切前夜', glyph: '🌙', rarity: 'epic', monsterLevel: 1, hp: 108, attack: 18, defense: 7, magicAttack: 12, magicDefense: 7, luck: 11, exp: 66, gold: 100, gemDropChance: .1, orbDropChance: .16, specialChance: .12, attackType: 'physical', quote: '時間だけが加速している。' },
-  { id: 'enemy.monday', displayName: '月曜の朝・真', glyph: '☀️', rarity: 'boss', monsterLevel: 1, hp: 150, attack: 21, defense: 10, magicAttack: 22, magicDefense: 10, luck: 13, exp: 110, gold: 180, gemDropChance: .3, orbDropChance: .28, specialChance: .22, attackType: 'magic', quote: '週は、また始まる。' },
-  { id: 'enemy.overflow_mail', displayName: '未読999+', glyph: '✉️', rarity: 'rare', monsterLevel: 2, hp: 165, attack: 25, defense: 12, magicAttack: 18, magicDefense: 11, luck: 13, exp: 90, gold: 145, gemDropChance: .05, orbDropChance: .12, specialChance: .1, attackType: 'physical', quote: '消しても増える。' },
-  { id: 'enemy.meeting_dragon', displayName: '会議竜', glyph: '🐉', rarity: 'legendary', monsterLevel: 2, hp: 260, attack: 33, defense: 17, magicAttack: 34, magicDefense: 18, luck: 18, exp: 170, gold: 300, gemDropChance: .18, orbDropChance: .22, specialChance: .18, attackType: 'magic', quote: '結論は次回へ持ち越された。' },
+const CORE_ENEMIES: readonly EnemyDefinition[] = [
+  { id: 'enemy.pebble', displayName: '妙に硬い石ころ', glyph: '🪨', rarity: 'common', monsterLevel: 1, hp: 42, attack: 7, defense: 2, magicAttack: 0, magicDefense: 1, luck: 3, exp: 18, gold: 20, gemDropChance: .005, orbDropChance: .002, specialChance: .01, attackType: 'physical', quote: 'そこにいるだけで道をふさぐ。' },
+  { id: 'enemy.alarm', displayName: '止まらない目覚まし', glyph: '⏰', rarity: 'common', monsterLevel: 1, hp: 50, attack: 8, defense: 2, magicAttack: 0, magicDefense: 2, luck: 4, exp: 20, gold: 24, gemDropChance: .005, orbDropChance: .002, specialChance: .02, attackType: 'physical', quote: 'あと5分、を許さない。' },
+  { id: 'enemy.crowd', displayName: '朝の満員馬車', glyph: '🚃', rarity: 'uncommon', monsterLevel: 1, hp: 62, attack: 10, defense: 4, magicAttack: 0, magicDefense: 3, luck: 5, exp: 27, gold: 34, gemDropChance: .012, orbDropChance: .005, specialChance: .04, attackType: 'physical', quote: '逃げ場が、ない。' },
+  { id: 'enemy.cold_soup', displayName: '冷めきった夕食', glyph: '🥣', rarity: 'common', monsterLevel: 1, hp: 55, attack: 8, defense: 3, magicAttack: 0, magicDefense: 3, luck: 4, exp: 22, gold: 26, gemDropChance: .005, orbDropChance: .002, specialChance: .02, attackType: 'physical', quote: '温め直す気力も奪ってくる。' },
+  { id: 'enemy.broken_sheet', displayName: '壊れた集計表', glyph: '📊', rarity: 'rare', monsterLevel: 1, hp: 82, attack: 6, defense: 5, magicAttack: 15, magicDefense: 7, luck: 8, exp: 42, gold: 62, gemDropChance: .035, orbDropChance: .012, specialChance: .08, attackType: 'magic', quote: '#REF! がこちらを見ている。' },
+  { id: 'enemy.dead_wifi', displayName: '圏外の魔導網', glyph: '📡', rarity: 'uncommon', monsterLevel: 1, hp: 70, attack: 5, defense: 3, magicAttack: 13, magicDefense: 6, luck: 6, exp: 34, gold: 46, gemDropChance: .012, orbDropChance: .005, specialChance: .06, attackType: 'magic', quote: 'あと一歩だけ届かない。' },
+  { id: 'enemy.deadline', displayName: '締切前夜', glyph: '🌙', rarity: 'epic', monsterLevel: 1, hp: 108, attack: 18, defense: 7, magicAttack: 12, magicDefense: 7, luck: 11, exp: 66, gold: 100, gemDropChance: .08, orbDropChance: .022, specialChance: .12, attackType: 'physical', quote: '時間だけが加速している。' },
+  { id: 'enemy.monday', displayName: '月曜の朝・真', glyph: '☀️', rarity: 'boss', monsterLevel: 1, hp: 150, attack: 21, defense: 10, magicAttack: 22, magicDefense: 10, luck: 13, exp: 110, gold: 180, gemDropChance: .3, orbDropChance: .06, specialChance: .22, attackType: 'magic', quote: '週は、また始まる。' },
+  { id: 'enemy.overflow_mail', displayName: '未読999+', glyph: '✉️', rarity: 'rare', monsterLevel: 2, hp: 165, attack: 25, defense: 12, magicAttack: 18, magicDefense: 11, luck: 13, exp: 90, gold: 145, gemDropChance: .035, orbDropChance: .012, specialChance: .1, attackType: 'physical', quote: '消しても増える。' },
+  { id: 'enemy.meeting_dragon', displayName: '会議竜', glyph: '🐉', rarity: 'legendary', monsterLevel: 2, hp: 260, attack: 33, defense: 17, magicAttack: 34, magicDefense: 18, luck: 18, exp: 170, gold: 300, gemDropChance: .18, orbDropChance: .04, specialChance: .18, attackType: 'magic', quote: '結論は次回へ持ち越された。' },
 ];
 
+type EnemySeed = readonly [displayName: string, glyph: string, attackType: 'physical' | 'magic'];
+
+const LEVEL_1_ADDITIONAL_SEEDS: readonly EnemySeed[] = [
+  ['片方だけ消えた靴下', '🧦', 'physical'], ['終わらない赤信号', '🚦', 'physical'], ['折れた傘の骨', '☂️', 'physical'],
+  ['釣銭切れの自販機', '🥤', 'physical'], ['絡まったイヤホン', '🎧', 'physical'], ['軋む事務椅子', '🪑', 'physical'],
+  ['残量1%の端末', '🔋', 'magic'], ['端だけ貼りつくラップ', '🫧', 'physical'], ['噛みこんだファスナー', '🧥', 'physical'],
+  ['一画素のひび割れ', '📱', 'magic'], ['ぬるい湯船', '🛁', 'physical'], ['溢れた小ゴミ箱', '🗑️', 'physical'],
+  ['不在票の幻', '📮', 'magic'], ['少し曲がった鍵', '🔑', 'physical'], ['眠そうなエスカレーター', '🛗', 'physical'],
+  ['消えたペンのキャップ', '🖊️', 'physical'], ['開かない自動扉', '🚪', 'physical'], ['飛ばせない広告', '📺', 'magic'],
+  ['乾かないタオル', '🧻', 'physical'], ['瞬く蛍光灯', '💡', 'magic'], ['古いパスワードメモ', '📝', 'magic'],
+  ['捨てられないレシート', '🧾', 'physical'],
+  ['止まらないエレベーター', '🛗', 'magic'], ['くしゃみするプリンタ', '🖨️', 'physical'], ['自走する買い物かご', '🛒', 'physical'],
+  ['疑わしい自動変換', '🔤', 'magic'], ['取り憑かれた予定表', '📅', 'magic'], ['幻の通知バッジ', '🔴', 'magic'],
+  ['詰まった排水口', '🚿', 'physical'], ['回り続ける読込輪', '🔄', 'magic'], ['逃げるキャスター椅子', '🪑', 'physical'],
+  ['終電の影', '🚇', 'magic'],
+  ['再配達迷宮', '📦', 'physical'], ['破損した書類棚', '🗄️', 'physical'], ['通知の暴風', '🌪️', 'magic'],
+  ['パケット喰いの霧', '🌫️', 'magic'], ['申告書ゴーレム', '📑', 'physical'], ['残業の分身', '👥', 'magic'],
+  ['日曜23時59分', '⏳', 'magic'], ['保存できない文書', '💾', 'magic'],
+  ['通勤螺旋の主', '🚉', 'physical'], ['全充電器の停電', '⚡', 'magic'],
+];
+
+const LEVEL_2_ADDITIONAL_SEEDS: readonly EnemySeed[] = [
+  ['未送信の下書き', '📨', 'magic'], ['増殖する付箋', '🟨', 'physical'], ['二重予約の会議室', '🚪', 'physical'],
+  ['返信全員の亡霊', '📧', 'magic'], ['押せない承認ボタン', '✅', 'magic'], ['期限切れ証明書', '📜', 'magic'],
+  ['迷子のVPN', '🔐', 'magic'], ['無名の共有フォルダ', '📁', 'magic'], ['巨大な添付ファイル', '📎', 'physical'],
+  ['終わらない同期', '☁️', 'magic'], ['再起動待ち端末', '💻', 'physical'], ['鳴りやまぬ着信', '📞', 'magic'],
+  ['壊れた勤怠打刻', '🕒', 'physical'], ['空欄だらけの議事録', '📒', 'magic'], ['半角全角の壁', '⌨️', 'physical'],
+  ['謎の権限不足', '🔒', 'magic'], ['迷走するカーソル', '🖱️', 'physical'], ['真っ赤な差分', '🟥', 'magic'],
+  ['深夜のビルド待ち', '🏗️', 'physical'], ['無限スクロール', '📜', 'magic'], ['切れたセッション', '🧵', 'magic'],
+  ['期限直前のレビュー', '👀', 'physical'], ['自動更新の奇襲', '🔁', 'magic'], ['消えたブックマーク', '🔖', 'magic'],
+  ['既読のつかない連絡', '💬', 'magic'],
+  ['承認ループ四天王', '♻️', 'magic'], ['再現しない不具合', '🐞', 'physical'], ['競合する予約表', '📆', 'physical'],
+  ['仕様変更の足音', '👣', 'physical'], ['散らばる権限設定', '🗝️', 'magic'], ['眠らない監視灯', '🚨', 'magic'],
+  ['行方不明の依存関係', '🧩', 'magic'], ['折り返すエラー通知', '📣', 'magic'], ['終わらない棚卸し', '📦', 'physical'],
+  ['逆流するログ', '📜', 'magic'], ['壊れたキャッシュ', '🧊', 'magic'], ['暴走する自動補完', '🤖', 'magic'],
+  ['差し戻しの精', '🧚', 'magic'], ['無限承認回廊', '🏛️', 'physical'], ['深夜再デプロイ', '🚀', 'magic'],
+  ['本番だけ落ちる影', '🌑', 'magic'], ['依存地獄の番犬', '🐕', 'physical'], ['赤点灯の監視塔', '🗼', 'magic'],
+  ['巻き戻る進捗表', '📉', 'magic'], ['終わらぬ緊急会議', '📢', 'physical'], ['深夜障害の化身', '🌃', 'magic'],
+  ['要件増殖王', '👑', 'magic'], ['無限リリース列車', '🚄', 'physical'],
+];
+
+const GEM_DROP_BY_RARITY: Readonly<Record<MonsterRarity, number>> = {
+  common: .005, uncommon: .012, rare: .035, epic: .08, legendary: .18, boss: .30,
+};
+const ORB_DROP_BY_RARITY: Readonly<Record<MonsterRarity, number>> = {
+  common: .002, uncommon: .005, rare: .012, epic: .022, legendary: .04, boss: .06,
+};
+const SPECIAL_BY_RARITY: Readonly<Record<MonsterRarity, number>> = {
+  common: .01, uncommon: .03, rare: .07, epic: .12, legendary: .18, boss: .24,
+};
+const RARITY_SCALE: Readonly<Record<MonsterRarity, number>> = {
+  common: 1, uncommon: 1.16, rare: 1.48, epic: 1.82, legendary: 2.32, boss: 3.05,
+};
+
+function additionalRarity(monsterLevel: 1 | 2, index: number): MonsterRarity {
+  if (monsterLevel === 1) {
+    if (index < 22) return 'common';
+    if (index < 32) return 'uncommon';
+    if (index < 38) return 'rare';
+    if (index < 40) return 'epic';
+    return 'legendary';
+  }
+  if (index < 25) return 'common';
+  if (index < 37) return 'uncommon';
+  if (index < 43) return 'rare';
+  if (index < 46) return 'epic';
+  if (index < 47) return 'legendary';
+  return 'boss';
+}
+
+function buildAdditionalEnemies(monsterLevel: 1 | 2, seeds: readonly EnemySeed[]): readonly EnemyDefinition[] {
+  const base = monsterLevel === 1
+    ? { hp: 47, attack: 8, defense: 2.6, magicDefense: 2.4, luck: 4, exp: 19, gold: 22 }
+    : { hp: 108, attack: 17, defense: 7.5, magicDefense: 7, luck: 8, exp: 48, gold: 68 };
+  const quoteTemplates = [
+    '小さな不便ほど、しぶとい。', '今日も当然のように立ちはだかる。', '無視すると、だいたい悪化する。',
+    '見なかったことにはできない。', '一度気になると、もう戻れない。', 'こちらの予定など気にしていない。',
+    '放っておけば消える、とは限らない。', 'なぜか今に限って本気を出している。',
+  ] as const;
+  return seeds.map(([displayName, glyph, attackType], index) => {
+    const rarity = additionalRarity(monsterLevel, index);
+    const scale = RARITY_SCALE[rarity];
+    const wobble = 0.95 + (index % 7) * 0.018;
+    const primary = Math.max(1, Math.round(base.attack * scale * wobble));
+    const defensiveWobble = 0.96 + (index % 5) * 0.025;
+    return {
+      id: `enemy.lv${monsterLevel}_${String(index + 1).padStart(2, '0')}`,
+      displayName,
+      glyph,
+      rarity,
+      monsterLevel,
+      hp: Math.max(1, Math.round(base.hp * scale * (0.96 + (index % 9) * 0.016))),
+      attack: attackType === 'physical' ? primary : Math.max(1, Math.round(primary * .35)),
+      defense: Math.max(1, Math.round(base.defense * scale * defensiveWobble)),
+      magicAttack: attackType === 'magic' ? Math.round(primary * 1.08) : Math.max(0, Math.round(primary * .28)),
+      magicDefense: Math.max(1, Math.round(base.magicDefense * scale * (attackType === 'magic' ? 1.12 : 1))),
+      luck: Math.max(1, Math.round(base.luck * (1 + (index % 6) * .08) * Math.sqrt(scale))),
+      exp: Math.max(1, Math.round(base.exp * scale * (1 + Math.max(0, rarityIndex(rarity) - 1) * .09))),
+      gold: Math.max(1, Math.round(base.gold * scale * (1 + Math.max(0, rarityIndex(rarity) - 1) * .11))),
+      gemDropChance: GEM_DROP_BY_RARITY[rarity],
+      orbDropChance: ORB_DROP_BY_RARITY[rarity],
+      specialChance: SPECIAL_BY_RARITY[rarity],
+      attackType,
+      quote: quoteTemplates[index % quoteTemplates.length]!,
+    } satisfies EnemyDefinition;
+  });
+}
+
+function rarityIndex(rarity: MonsterRarity): number {
+  return ['common', 'uncommon', 'rare', 'epic', 'legendary', 'boss'].indexOf(rarity);
+}
+
+export const enemies: readonly EnemyDefinition[] = [
+  ...CORE_ENEMIES,
+  ...buildAdditionalEnemies(1, LEVEL_1_ADDITIONAL_SEEDS),
+  ...buildAdditionalEnemies(2, LEVEL_2_ADDITIONAL_SEEDS),
+];
 export const rarityOrder: readonly MonsterRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'boss'];
 export const orbRanks: readonly OrbRank[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
 export const orbPercentByRank: Readonly<Record<OrbRank, readonly [number, number]>> = {
