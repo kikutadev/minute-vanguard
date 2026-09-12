@@ -41,6 +41,7 @@ import {
   equipOwnedTitle,
   expRequiredForNextLevel,
   fight,
+  freeCooldownSkipsRemaining,
   gemBalance,
   goldBalance,
   moveEquippedTitle,
@@ -291,6 +292,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
+  const freeSkips = freeCooldownSkipsRemaining(state);
   const last = state.gameData.lastBattle;
   return <section className="battle-page page-section">
     <div className="section-tabs"><button className="active">⚔ モンスター戦</button><button disabled>🏆 チャンプ戦</button></div>
@@ -311,7 +313,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
       <button className="fight-button" onClick={props.onFight} disabled={!cooldown.ready}>
         {cooldown.ready ? <><b>⚔ 戦闘する</b><span>1戦だけ挑む</span></> : <><b>{cooldown.remainingSec}秒</b><span>次の戦闘まで</span></>}
       </button>
-      {!cooldown.ready && canSkipBattleCooldown(state) && <button className="skip-button" onClick={props.onSkip}>💎 {skipCost} で待ち時間をスキップ</button>}
+      {!cooldown.ready && canSkipBattleCooldown(state) && <button className="skip-button" onClick={props.onSkip}>{freeSkips > 0 ? `無料スキップ · 本日あと ${freeSkips}/3` : `💎 ${skipCost} で待ち時間をスキップ`}</button>}
       <button className={`rare-button ${state.gameData.rareGuaranteeActive ? 'active' : ''}`} onClick={props.onRare} disabled={state.gameData.rareGuaranteeActive}>💎10 レア確定</button>
     </div>
 

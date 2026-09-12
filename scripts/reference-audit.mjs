@@ -9,6 +9,7 @@ const checks = [
   ['guide', 'battle.mutation', ['変異種', '1', '3 倍']],
   ['guide', 'progression.stats', ['HP / ATK / DEF / MAT / MDF / LUK']],
   ['guide', 'progression.jobChange', ['Lv.30', '転職']],
+  ['guide', 'permanentUpgrades', ['カウントダウンスキップ', '1日3回まで無料', '500', 'クールダウン短縮', '3,000', '獲得経験値 1.2倍', '獲得ゴールド 1.2倍', 'オーブドロップ率 ×1.5', '引き分け時の経験値が2倍']],
   ['guide', 'orb.ranks', ['F 〜 SSS']],
   ['guide', 'orb.gacha', ['100', '1,000', 'ランクA以上']],
   ['guide', 'orb.combine', ['同ランクの素材オーブ4個', 'SSSまで到達可能']],

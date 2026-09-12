@@ -133,6 +133,7 @@ export type PlayerProgress = Readonly<{
 }>;
 
 export type PermanentUpgradeState = Readonly<{
+  freeCooldownSkips: boolean;
   cooldownReduction: boolean;
   expMultiplier: boolean;
   goldMultiplier: boolean;
@@ -157,6 +158,7 @@ export type MinuteVanguardGameData = Readonly<{
   lastBattle: BattleResult | null;
   rareGuaranteeActive: boolean;
   permanentUpgrades: PermanentUpgradeState;
+  freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];
   activePetEnemyIds: readonly string[];
   orbCapacity: number;

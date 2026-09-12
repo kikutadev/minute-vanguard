@@ -90,6 +90,7 @@ export const shopEquipmentOffers = [
 ] as const;
 
 export const permanentUpgradeDefinitions = [
+  { id: 'freeCooldownSkips', label: '無料カウントダウンスキップ', description: '待ち時間スキップが毎日3回まで無料', price: 500 },
   { id: 'cooldownReduction', label: 'クールダウン短縮', description: 'モンスター戦 60秒 → 50秒', price: 3000 },
   { id: 'expMultiplier', label: '獲得EXP 1.2倍', description: '獲得EXPが永久に20%増加', price: 2000 },
   { id: 'goldMultiplier', label: '獲得Gold 1.2倍', description: '獲得Goldが永久に20%増加', price: 2000 },

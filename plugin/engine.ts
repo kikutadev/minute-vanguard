@@ -156,12 +156,14 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       lastBattle: null,
       rareGuaranteeActive: false,
       permanentUpgrades: {
+        freeCooldownSkips: false,
         cooldownReduction: false,
         expMultiplier: false,
         goldMultiplier: false,
         orbDropMultiplier: false,
         drawExpMultiplier: false,
       },
+      freeCooldownSkipUsage: { dayKey: jstDayKey(nowMs), used: 0 },
       ownedPetEnemyIds: [],
       activePetEnemyIds: [],
       orbCapacity: ORB_BASE_CAPACITY,
@@ -186,6 +188,8 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         titles: state.gameData.titles ?? createProgressiveTitleCollection(),
         favoriteTitleIds: state.gameData.favoriteTitleIds ?? [],
         titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
+        permanentUpgrades: { ...state.gameData.permanentUpgrades, freeCooldownSkips: state.gameData.permanentUpgrades.freeCooldownSkips ?? false },
+        freeCooldownSkipUsage: state.gameData.freeCooldownSkipUsage ?? { dayKey: jstDayKey(nowMs), used: 0 },
       },
     };
   }
@@ -220,6 +224,7 @@ export function advanceFromWallClock(
         ...nextState.gameData,
         missionProgress: { dayKey: currentDayKey, battles: 0, wins: 0, upgrades: 0, claimed: [] },
         titleShop: { dayKey: currentDayKey, offeredTitleIds: computeDailyTitleOfferIds(currentDayKey, nextState.gameData.titles), purchasedTitleIds: [] },
+        freeCooldownSkipUsage: { dayKey: currentDayKey, used: 0 },
       },
     };
   }
@@ -273,9 +278,17 @@ export function purchaseTimeBoost(
   return accept(nextState, [event(nextState, 'timeBoostPurchased', `${kind}:${durationSec}`, { kind, durationSec, gemCost: option.gemCost })]);
 }
 
+export function freeCooldownSkipsRemaining(state: MinuteVanguardState): number {
+  if (!state.gameData.permanentUpgrades.freeCooldownSkips) return 0;
+  if (state.gameData.freeCooldownSkipUsage.dayKey !== jstDayKey(state.lastWallClockMs)) return 3;
+  return Math.max(0, 3 - state.gameData.freeCooldownSkipUsage.used);
+}
+
 export function cooldownSkipCost(state: MinuteVanguardState): number {
   const remaining = battleCooldown(state).remainingSec;
-  return remaining <= 0 ? 0 : Math.min(6, Math.max(1, Math.ceil(remaining / 10)));
+  if (remaining <= 0) return 0;
+  if (freeCooldownSkipsRemaining(state) > 0) return 0;
+  return Math.min(6, Math.max(1, Math.ceil(remaining / 10)));
 }
 
 /** The public reference intentionally hides skip controls during the 5-second beginner cadence. */
@@ -290,11 +303,21 @@ export function skipBattleCooldown(
   const preview = battleCooldown(state);
   if (preview.ready || !canSkipBattleCooldown(state)) return reject(state, 'already-ready');
   const cost = cooldownSkipCost(state);
-  const spend = spendCurrency(state, ids.currency.gem, cost, 'battle.cooldown-skip');
-  if (!spend.accepted) return reject(state, 'insufficient-gems');
-  const reduced = reduceCooldown({ cooldown: spend.state.gameData.battleCooldown, simTimeSec: state.simTimeSec, reductionSec: preview.remainingSec });
-  const nextState = { ...spend.state, gameData: { ...spend.state.gameData, battleCooldown: reduced } };
-  return accept(nextState, [event(nextState, 'battleCooldownSkipped', `${state.gameData.totalBattles}`, { cost })]);
+  const free = cost === 0 && freeCooldownSkipsRemaining(state) > 0;
+  const paid = free ? { accepted: true as const, state } : spendCurrency(state, ids.currency.gem, cost, 'battle.cooldown-skip');
+  if (!paid.accepted) return reject(state, 'insufficient-gems');
+  const reduced = reduceCooldown({ cooldown: paid.state.gameData.battleCooldown, simTimeSec: state.simTimeSec, reductionSec: preview.remainingSec });
+  const nextState: MinuteVanguardState = {
+    ...paid.state,
+    gameData: {
+      ...paid.state.gameData,
+      battleCooldown: reduced,
+      freeCooldownSkipUsage: free
+        ? { ...paid.state.gameData.freeCooldownSkipUsage, used: paid.state.gameData.freeCooldownSkipUsage.used + 1 }
+        : paid.state.gameData.freeCooldownSkipUsage,
+    },
+  };
+  return accept(nextState, [event(nextState, 'battleCooldownSkipped', `${state.gameData.totalBattles}`, { cost, free })]);
 }
 
 export function activateRareGuarantee(

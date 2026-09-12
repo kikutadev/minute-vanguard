@@ -17,9 +17,11 @@ The product is an independent repository beside the other idle-game consumers. `
 
 Minute Vanguard is a solo game first. Battle, reward, level, equipment, pet, mission, save/load and offline resume use the local save as authority and must work with no backend configured.
 
-Other-player information is optional. The game builds a small product-owned public projection (`MinuteVanguardPublicData`) rather than exposing the raw save, and consumes it through the Kit `PublicPlayerDirectoryReader`. If `VITE_PUBLIC_PLAYER_API_BASE_URL` is absent or unavailable, the game falls back to solo presentation without blocking gameplay. Publishing is deferred until authenticated ownership exists on the Cloudflare Worker side.
+Other-player information is optional. The game builds a small product-owned public projection (`MinuteVanguardPublicData`) rather than exposing the raw save, and consumes it through the Kit `PublicPlayerDirectoryReader`. Production builds fall back to solo presentation when `VITE_PUBLIC_PLAYER_API_BASE_URL` is absent or unavailable. Publishing is deferred until authenticated ownership exists on the Cloudflare Worker side.
 
-The preferred future backend deployment follows the Kit Cloudflare baseline: Workers + Static Assets for the client/API and D1 for queryable public-player projections. Existing GitHub Pages hosting may remain during the solo-first phase; it is not the target infrastructure for new shared-data features.
+For local development, the Cloudflare path is reproduced with Wrangler local D1. `cloudflare/migrations/` mirrors the Kit public-player schema, `cloudflare/worker.js` composes `D1PublicPlayerDirectory` with the Kit request handler, and Vite proxies `/api` to the local Worker. Seed rows are public projections only, never raw saves. This local harness is part of QA, not a deployed production backend.
+
+GitHub Pages remains the current static deployment target and uploads only `dist/`. A future authenticated/shared-data production deployment can move the same API shape to Cloudflare Workers + D1 without changing solo progression authority.
 
 ## Reference fidelity target
 

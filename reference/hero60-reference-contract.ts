@@ -52,6 +52,14 @@ export const hero60Reference = {
     jobChangeLevel: 30,
     jobs: 9,
   },
+  permanentUpgrades: {
+    freeCooldownSkips: { gemCost: 500, dailyUses: 3 },
+    cooldownReduction: { gemCost: 3000, fromSec: 60, toSec: 50 },
+    expMultiplier: { gemCost: 2000, multiplier: 1.2 },
+    goldMultiplier: { gemCost: 2000, multiplier: 1.2 },
+    orbDropMultiplier: { gemCost: 2000, multiplier: 1.5 },
+    drawExpMultiplier: { gemCost: 500, fromRatio: 0.05, toRatio: 0.10 },
+  },
   orb: {
     ranks: ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'] as const,
     gachaSingleCost: 100,

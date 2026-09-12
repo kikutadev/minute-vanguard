@@ -36,6 +36,7 @@ Implemented in the current build:
 - IndexedDB save and wall-clock cooldown progression
 - same-core headless simulator
 - GitHub Pages workflow that uploads `dist/` only
+- local Cloudflare Worker + D1 harness for public-player directory QA
 
 ## Kit boundary
 
@@ -55,7 +56,7 @@ The repository vendors the built Kit package under `vendor/idle-game-kit` becaus
 
 ## Online boundary
 
-Ranking, PvP/Champion, shared Raid, chat, account/payment and other shared-world systems are intentionally not simulated as fake local features. They require a separate server-authoritative service.
+Public-player browsing has a local Cloudflare-compatible harness backed by Wrangler local D1. It exists to exercise the real Kit D1 adapter and API shape without requiring a remote database. PvP/Champion, shared Raid, chat, account/payment and authenticated publishing still require a server-authoritative production service.
 
 ## Development
 
@@ -76,4 +77,15 @@ Benchmark mechanics are tracked with a public-reference contract, live guide/pat
 
 ## Solo-first public player directory
 
-The game remains fully playable from its local save with no backend configured. If `VITE_PUBLIC_PLAYER_API_BASE_URL` is set, the Ranking tab uses the vendored Kit `PublicPlayerDirectoryReader` / Cloudflare adapter to browse public player projections. No raw save is sent by this client. Publishing is intentionally deferred until authenticated ownership is implemented on the Cloudflare Worker side.
+The game remains fully playable from its local save with no backend configured. Production builds only use a public-player API when `VITE_PUBLIC_PLAYER_API_BASE_URL` is explicitly provided. Development defaults to `/api`, which Vite proxies to the local Worker on port 8787. The Ranking tab therefore exercises the same vendored Kit `PublicPlayerDirectoryReader` / D1 adapter against a real local D1 database. No raw save is sent by this client. Publishing is intentionally deferred until authenticated ownership is implemented.
+
+To recreate the Cloudflare data path locally:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm db:reset:local   # apply D1 migration + load three public-profile fixtures
+pnpm dev:db           # Wrangler Worker + local D1 on http://127.0.0.1:8787
+pnpm dev --host 127.0.0.1 --port 4177
+```
+
+Open the Ranking tab and the three seeded public adventurers should be loaded through `Vite /api -> Worker -> D1`. Wrangler state lives under `cloudflare/.wrangler/` and is ignored by git. GitHub Pages does not ship or depend on that database; only `dist/` is deployed and the game falls back to solo mode there unless a production API URL is intentionally configured later.
