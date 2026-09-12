@@ -1,7 +1,7 @@
 # idle-game-kit vendored package provenance
 
 - Source repository: `https://github.com/kikutadev/idle-game-kit.git`
-- Source commit: `00e6455`
+- Source commit: `12a42e0`
 - Package version: `0.2.0`
 - Build command: `pnpm build:kit`
 - Vendored from a clean `main` worktree after the source commit above.

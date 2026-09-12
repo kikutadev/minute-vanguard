@@ -13,6 +13,14 @@ Status: Hero60-reference vertical slice (2026-09-12)
 
 The product is an independent repository beside the other idle-game consumers. `idle-game-kit` owns reusable currency, reward, deterministic RNG, cooldown, inventory/loadout and browser persistence primitives. Combat, jobs, monsters, pet capture, mission conditions and presentation remain product-owned typed code.
 
+### Solo-first and optional public player data
+
+Minute Vanguard is a solo game first. Battle, reward, level, equipment, pet, mission, save/load and offline resume use the local save as authority and must work with no backend configured.
+
+Other-player information is optional. The game builds a small product-owned public projection (`MinuteVanguardPublicData`) rather than exposing the raw save, and consumes it through the Kit `PublicPlayerDirectoryReader`. If `VITE_PUBLIC_PLAYER_API_BASE_URL` is absent or unavailable, the game falls back to solo presentation without blocking gameplay. Publishing is deferred until authenticated ownership exists on the Cloudflare Worker side.
+
+The preferred future backend deployment follows the Kit Cloudflare baseline: Workers + Static Assets for the client/API and D1 for queryable public-player projections. Existing GitHub Pages hosting may remain during the solo-first phase; it is not the target infrastructure for new shared-data features.
+
 ## Reference fidelity target
 
 The interaction model intentionally follows the current public structure of Hero60-style play rather than the earlier generic prototype:
@@ -80,7 +88,7 @@ Weapon and Armor are bought, equipped, upgraded to +5, or discarded from Equipme
 
 Orb ranks are F / E / D / C / B / A / S / SS / SSS. Orbs distribute percentage budget across the six stats and may have one special effect. Gacha costs 100 Gem per pull; a 10-pull costs 1,000 Gem and guarantees at least one A-or-higher orb plus a special-effect result.
 
-Rank-up synthesis, reroll, locking and capacity expansion are not yet implemented and must not be presented as completed.
+Rank-up synthesis, reroll, locking, favorites and capacity expansion are implemented. The base capacity is 10, expansion costs 100 Gem per slot, reroll preserves total percentage budget with up to three locked stats, and synthesis consumes one parent plus four same-rank materials while preserving the parent instance.
 
 ## Jobs
 

@@ -18,6 +18,8 @@ export type InventoryState<TData = unknown> = Readonly<Record<ItemInstanceId, It
 export type LoadoutSlotDefinition = Readonly<{
     id: LoadoutSlotId;
     acceptsTags?: readonly string[];
+    /** Product-authored initial availability. Runtime progression unlocks the slot in LoadoutState. */
+    initiallyLocked?: boolean;
 }>;
 export type LoadoutDefinition = Readonly<{
     id: LoadoutId;
@@ -26,6 +28,8 @@ export type LoadoutDefinition = Readonly<{
 export type LoadoutState = Readonly<{
     definitionId: LoadoutId;
     equipped: Readonly<Record<LoadoutSlotId, ItemInstanceId | null>>;
+    /** Missing means every authored slot is unlocked, preserving compatibility with older save shapes. */
+    lockedSlotIds?: readonly LoadoutSlotId[];
 }>;
 /** Add a concrete item instance immutably. Duplicate instance IDs are rejected. */
 export declare function addItemInstance<TData>(inventory: InventoryState<TData>, item: ItemInstanceState<TData>): Readonly<{
@@ -46,10 +50,22 @@ export declare function removeItemInstance<TData>(inventory: InventoryState<TDat
     inventory: InventoryState<TData>;
     reason: 'unknown-instance';
 }>;
-/** Create an empty loadout whose slots exactly match the authored definition. */
+/** Create an empty loadout whose slots exactly match the authored definition and initial lock state. */
 export declare function createLoadoutState(definition: LoadoutDefinition): LoadoutState;
+/** Old save shapes without lockedSlotIds intentionally mean all slots are available. */
+export declare function isLoadoutSlotUnlocked(loadout: LoadoutState, slotId: LoadoutSlotId): boolean;
+/** Unlock a progression-gated slot. Repeated unlocks are idempotent and preserve object identity. */
+export declare function unlockLoadoutSlot(loadoutDefinition: LoadoutDefinition, loadout: LoadoutState, slotId: LoadoutSlotId): Readonly<{
+    accepted: true;
+    loadout: LoadoutState;
+    changed: boolean;
+}> | Readonly<{
+    accepted: false;
+    loadout: LoadoutState;
+    reason: 'definition-mismatch' | 'unknown-slot';
+}>;
 /**
- * Equip an owned item into a slot. The same instance cannot occupy multiple slots in one loadout,
+ * Equip an owned item into an unlocked slot. The same instance cannot occupy multiple slots in one loadout,
  * and optional slot tag restrictions are checked against the item definition.
  */
 export declare function equipItem<TData>(args: Readonly<{
@@ -66,7 +82,7 @@ export declare function equipItem<TData>(args: Readonly<{
 }> | Readonly<{
     accepted: false;
     loadout: LoadoutState;
-    reason: 'definition-mismatch' | 'unknown-slot' | 'unknown-item' | 'unknown-item-definition' | 'slot-restriction' | 'already-equipped';
+    reason: 'definition-mismatch' | 'unknown-slot' | 'slot-locked' | 'unknown-item' | 'unknown-item-definition' | 'slot-restriction' | 'already-equipped';
 }>;
 /** Unequip one slot. Unknown slots are rejected; an already empty slot preserves identity. */
 export declare function unequipItem(loadoutDefinition: LoadoutDefinition, loadout: LoadoutState, slotId: LoadoutSlotId): Readonly<{
@@ -77,4 +93,26 @@ export declare function unequipItem(loadoutDefinition: LoadoutDefinition, loadou
     accepted: false;
     loadout: LoadoutState;
     reason: 'definition-mismatch' | 'unknown-slot';
+}>;
+/**
+ * Move an equipped item between slots, optionally swapping with the destination item.
+ * Both directions are tag-validated before a swap is committed.
+ */
+export declare function moveEquippedItem<TData>(args: Readonly<{
+    inventory: InventoryState<TData>;
+    itemDefinitions: Readonly<Record<ItemDefinitionId, ItemDefinition>>;
+    loadoutDefinition: LoadoutDefinition;
+    loadout: LoadoutState;
+    fromSlotId: LoadoutSlotId;
+    toSlotId: LoadoutSlotId;
+    allowSwap?: boolean;
+}>): Readonly<{
+    accepted: true;
+    loadout: LoadoutState;
+    movedItemInstanceId: ItemInstanceId;
+    swappedItemInstanceId: ItemInstanceId | null;
+}> | Readonly<{
+    accepted: false;
+    loadout: LoadoutState;
+    reason: 'definition-mismatch' | 'unknown-slot' | 'slot-locked' | 'source-empty' | 'target-occupied' | 'unknown-item' | 'unknown-item-definition' | 'slot-restriction';
 }>;

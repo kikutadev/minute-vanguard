@@ -1,8 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import type { PublicPlayerSnapshot } from 'idle-game-kit';
 import { GameSession } from '../application/game-session';
+import {
+  createMinuteVanguardPublicData,
+  MINUTE_VANGUARD_GAME_ID,
+  type MinuteVanguardPublicData,
+} from '../application/public-player-profile';
 import {
   enemies,
   itemDefinitions,
+  jobs,
   orbRanks,
   permanentUpgradeDefinitions,
   shopEquipmentOffers,
@@ -46,6 +53,7 @@ import {
   toggleOrbLock,
   upgradeItem,
 } from '../plugin/engine';
+import { publicPlayerDirectory } from './public-player-directory';
 
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
@@ -344,16 +352,65 @@ function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
 }
 
 function RankingView({ state }: Readonly<{ state: MinuteVanguardState }>) {
-  const rows = [
-    { name: '風見の勇者', level: Math.max(42, state.gameData.player.level + 18) },
-    { name: '寝不足騎士', level: Math.max(31, state.gameData.player.level + 11) },
-    { name: state.gameData.player.name, level: state.gameData.player.level, you: true },
-    { name: 'スライム係', level: Math.max(1, state.gameData.player.level - 2) },
-  ].sort((a, b) => b.level - a.level);
+  const [remoteStatus, setRemoteStatus] = useState<'disabled' | 'loading' | 'ready' | 'error'>(
+    publicPlayerDirectory === null ? 'disabled' : 'loading',
+  );
+  const [remotePlayers, setRemotePlayers] = useState<readonly PublicPlayerSnapshot<MinuteVanguardPublicData>[]>([]);
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const own = createMinuteVanguardPublicData(state);
+
+  useEffect(() => {
+    if (publicPlayerDirectory === null) return;
+    let cancelled = false;
+    void publicPlayerDirectory.listPublicPlayers({ gameId: MINUTE_VANGUARD_GAME_ID, limit: 20 })
+      .then((page) => {
+        if (cancelled) return;
+        setRemotePlayers(page.players);
+        setRemoteStatus('ready');
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setRemotePlayers([]);
+        setRemoteStatus('error');
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const selected = remotePlayers.find((player) => player.playerId === selectedPlayerId);
   return <section className="page-section ranking-page">
-    <h1>ランキング</h1><div className="subtabs"><button className="active">レベル</button><button>討伐数</button><button>転職</button><button>図鑑</button></div>
-    <p className="offline-label">LOCAL PROTOTYPE · サーバーランキングは未接続</p>
-    <div className="ranking-list">{rows.map((row, index) => <div className={`rank-row ${row.you ? 'you' : ''}`} key={row.name}><b>{index + 1}</b><span>🧑‍🚀</span><strong>{row.name}{row.you ? '（あなた）' : ''}</strong><em>Lv.{row.level}</em></div>)}</div>
+    <h1>ランキング</h1>
+    <div className="subtabs"><button className="active">公開冒険者</button><button disabled>レベル</button><button disabled>討伐数</button><button disabled>図鑑</button></div>
+
+    <div className="self-public-card">
+      <span>あなた</span><strong>{state.gameData.player.name}</strong><em>Lv.{own.level} · {jobDisplayName(own.jobId)}</em>
+      <small>{own.victories.toLocaleString()}勝 / 図鑑 {own.discoveredEnemyCount}/{enemies.length} / ペット {own.ownedPetCount}</small>
+    </div>
+
+    {remoteStatus === 'disabled' && <p className="offline-label">SOLO MODE · 公開プレイヤーAPI未設定。ゲーム進行には影響しません。</p>}
+    {remoteStatus === 'loading' && <p className="offline-label">公開冒険者を読み込んでいます…</p>}
+    {remoteStatus === 'error' && <p className="offline-label error">公開冒険者を取得できません。ソロプレイはそのまま続けられます。</p>}
+    {remoteStatus === 'ready' && remotePlayers.length === 0 && <p className="empty-state">公開中の冒険者はまだいません。</p>}
+
+    <div className="ranking-list">{remotePlayers.map((player) => <button
+      className={`rank-row public-player-row ${selectedPlayerId === player.playerId ? 'selected' : ''}`}
+      key={player.playerId}
+      onClick={() => setSelectedPlayerId((current) => current === player.playerId ? null : player.playerId)}
+    >
+      <b>•</b><span>🧑‍🚀</span><strong>{player.displayName}<small>{jobDisplayName(player.data.jobId)} · {player.data.victories.toLocaleString()}勝</small></strong><em>Lv.{player.data.level}</em>
+    </button>)}</div>
+
+    {selected !== undefined && <div className="public-player-detail">
+      <header><span>公開プロフィール</span><strong>{selected.displayName}</strong><em>Lv.{selected.data.level}</em></header>
+      <div className="public-player-stats">
+        <div><span>職業</span><strong>{jobDisplayName(selected.data.jobId)}</strong></div>
+        <div><span>転職</span><strong>{selected.data.totalJobChanges}回</strong></div>
+        <div><span>勝利</span><strong>{selected.data.victories.toLocaleString()}</strong></div>
+        <div><span>戦闘</span><strong>{selected.data.totalBattles.toLocaleString()}</strong></div>
+        <div><span>図鑑</span><strong>{selected.data.discoveredEnemyCount}/{enemies.length}</strong></div>
+        <div><span>ペット</span><strong>{selected.data.ownedPetCount}</strong></div>
+      </div>
+      <div className="public-loadout"><span>⚔ {selected.data.equippedWeaponName ?? '装備なし'}</span><span>🛡 {selected.data.equippedArmorName ?? '装備なし'}</span><span>🔮 {selected.data.equippedOrbRank === null ? 'オーブなし' : `${selected.data.equippedOrbRank}オーブ`}</span></div>
+    </div>}
   </section>;
 }
 
@@ -553,6 +610,10 @@ function nextOrbRank(rank: EquipmentData['orbRank']): string {
   if (rank === undefined) return '-';
   const index = orbRanks.indexOf(rank);
   return orbRanks[index + 1] ?? 'MAX';
+}
+
+function jobDisplayName(jobId: string): string {
+  return jobs.find((job) => job.id === jobId)?.displayName ?? jobId;
 }
 
 function effectLabel(effectId: string): string {

@@ -72,3 +72,7 @@ Production output is written to `dist/` with relative asset URLs so the same bui
 ## Reference parity workflow
 
 Benchmark mechanics are tracked with a public-reference contract, live guide/patch-note audit and Domain parity tests. See `docs/REFERENCE-PARITY.md`.
+
+## Solo-first public player directory
+
+The game remains fully playable from its local save with no backend configured. If `VITE_PUBLIC_PLAYER_API_BASE_URL` is set, the Ranking tab uses the vendored Kit `PublicPlayerDirectoryReader` / Cloudflare adapter to browse public player projections. No raw save is sent by this client. Publishing is intentionally deferred until authenticated ownership is implemented on the Cloudflare Worker side.

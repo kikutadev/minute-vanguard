@@ -65,6 +65,7 @@ The source boundary is intentionally explicit:
 - `src/index.ts` — platform-neutral Domain/Application API
 - `simulator/index.ts` — same-core simulator API
 - `src/platform/web/index.ts` — optional browser-only adapters
+- `src/platform/cloudflare/index.ts` — optional Cloudflare-oriented shared-data adapters
 - `src/react/index.ts` — optional React binding and unstyled semantic UI primitives
 
 `pnpm build:kit` bundles those same boundaries into `dist-kit/` with these imports:
@@ -73,6 +74,7 @@ The source boundary is intentionally explicit:
 import { GameNumber, advanceContinuousActivity } from 'idle-game-kit';
 import { runSimulation } from 'idle-game-kit/simulator';
 import { FakeAdAdapter } from 'idle-game-kit/web';
+import { CloudflarePublicPlayerDirectory } from 'idle-game-kit/cloudflare';
 import { ProgressBar, useApplicationStore } from 'idle-game-kit/react';
 ```
 
@@ -124,3 +126,8 @@ Product-specific PWA metadata, deployment targets, screenshots, balance targets 
 - `games/<game>/docs/` — Reference Product current truth
 
 The next Kit change should come from a concrete consumer need, provider/deployment constraint, or observed product problem—not from adding systems for completeness alone.
+
+
+## Cloudflare infrastructure baseline
+
+Kit-backed Web products are solo-first: the local save remains authoritative and remote shared-data features are optional. For new Cloudflare deployments, prefer Workers + Static Assets, Workers API routes, and D1 for public/queryable relational data. See `docs/adr/0007-solo-first-cloudflare-public-directory.md` and `infrastructure/cloudflare/README.md`.

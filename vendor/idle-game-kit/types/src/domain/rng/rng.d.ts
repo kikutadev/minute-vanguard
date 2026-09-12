@@ -10,4 +10,9 @@ export declare function nextRandom(stream: RngStreamState): {
     value: number;
     stream: RngStreamState;
 };
+export type WeightedCandidate = Readonly<{
+    weight: number;
+}>;
+/** Deterministically map a [0,1) sample onto a positive finite weighted table. */
+export declare function selectWeightedCandidate<T extends WeightedCandidate>(candidates: readonly T[], randomValue: number): T;
 export declare function createRngStreams(seed: number, streamNames: readonly string[]): RngStreamStates;

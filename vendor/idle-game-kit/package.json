@@ -21,6 +21,11 @@
       "import": "./web.js",
       "default": "./web.js"
     },
+    "./cloudflare": {
+      "types": "./types/src/platform/cloudflare/index.d.ts",
+      "import": "./cloudflare.js",
+      "default": "./cloudflare.js"
+    },
     "./simulator": {
       "types": "./types/simulator/index.d.ts",
       "import": "./simulator.js",
