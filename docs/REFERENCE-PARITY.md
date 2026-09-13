@@ -66,6 +66,7 @@
 - 肩書きは転職で全解除、就職中の全解除は300Gem
 
 - Monster roster density: Lv.1〜13、各50体、合計650体。前レベルを1体倒すと次レベルを解放し、解放済み狩場から1つ選択して戦う。Minute Vanguardの名称・設定は全て独自。
+- クールダウン中のモンスター叩き: 6マス、勇者/空マスは-3、報酬なし、自己ベストは端末ローカルのみ。
 - Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
 - Gold bags: 30/100/300 Gem, based only on rolling last-ten monster-victory levels, unavailable before two wins, unaffected by current Gold multipliers. Exact payout equation remains product-owned because the public guide does not expose it.

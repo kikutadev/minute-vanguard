@@ -139,6 +139,8 @@ The current solo build has 650 original monsters: 50 in each Monster Lv.1–13. 
 
 The codex is split by monster level and records encounters, defeats, mutated encounters, capture eligibility and captured state.
 
+During an active battle cooldown, the player can open a reward-free `Monster Tap` pastime. Six cells cycle through monsters from unlocked levels plus occasional hero decoys. Correct monster taps score +1; hero or empty-cell taps cost 3 points. The best score is local-device-only and opening/closing the pastime has no effect on progression or rewards.
+
 ## Pets
 
 A monster becomes capture-eligible after 30 successful defeats. Every later victory against that monster rolls 1% capture. One normal copy of each monster can be owned. Capturing its mutated form is tracked separately and adds another +1% level-up growth bonus without increasing the owned-pet count.

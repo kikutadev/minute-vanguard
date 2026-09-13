@@ -33,6 +33,7 @@ export const hero60Reference = {
     permanentStatChance: 0.01,
   },
   monsters: { levels: 13, perLevel: 50, total: 650, sequentialUnlock: true },
+  cooldownPastime: { cells: 6, wrongTapPenalty: 3, grantsRewards: false, localBestOnly: true },
   goldBags: {
     gemCosts: [30, 100, 300] as const,
     historyWins: 10,

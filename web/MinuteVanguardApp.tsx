@@ -101,7 +101,7 @@ import { publicPlayerDirectory } from './public-player-directory';
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
-type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | null;
+type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | 'tap-game' | null;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
 export function MinuteVanguardApp() {
@@ -227,7 +227,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
+        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onTapGame={() => setModal('tap-game')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -366,6 +366,7 @@ export function MinuteVanguardApp() {
         if (!result.accepted) setNotice('本日のログインボーナスは受取済みです');
         else { commit(result.state, `ログイン${preview.day}日目の報酬を受け取りました`); setModal(null); }
       }} />}
+      {modal === 'tap-game' && <MonsterTapGame state={state} onClose={() => setModal(null)} />}
       {modal === 'menu' && <MenuModal loginAvailable={loginBonusPreview(state).available} onLogin={() => setModal('login')} onClose={() => setModal(null)} onReset={async () => {
         if (!window.confirm('セーブデータを削除して最初から始めますか？')) return;
         const reset = await session.reset();
@@ -376,7 +377,7 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onTapGame: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -405,6 +406,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
         {cooldown.ready ? <><b>⚔ 戦闘する</b><span>1戦だけ挑む</span></> : <><b>{cooldown.remainingSec}秒</b><span>次の戦闘まで</span></>}
       </button>
       {!cooldown.ready && canSkipBattleCooldown(state) && <button className="skip-button" onClick={props.onSkip}>{freeSkips > 0 ? `無料スキップ · 本日あと ${freeSkips}/3` : `💎 ${skipCost} で待ち時間をスキップ`}</button>}
+      {!cooldown.ready && <button className="pastime-button" onClick={props.onTapGame}>👾 モンスター叩き <small>報酬なし · 暇つぶし</small></button>}
       <div className="battle-prep-actions">
         <button className={`rare-button ${state.gameData.rareGuaranteeActive ? 'active' : ''}`} onClick={props.onRare} disabled={state.gameData.rareGuaranteeActive}>💎10 レア確定</button>
         <button className={`boost-button ${state.gameData.battleBoostActive ? 'active' : ''}`} onClick={props.onBoost} disabled={state.gameData.battleBoostActive}>💎10 EXP/GOLD ×2</button>
@@ -949,6 +951,49 @@ function LoginBonusModal(props: Readonly<{ state: MinuteVanguardState; onClose: 
       return <div key={reward.day} className={`${current ? 'current' : ''} ${completed ? 'completed' : ''}`}><b>{reward.day}日目</b><strong>{reward.gold.toLocaleString()} G</strong>{reward.gems > 0 && <em>＋💎 {reward.gems}</em>}</div>;
     })}</div>
     <button className="modal-primary login-claim-button" disabled={!preview.available} onClick={props.onClaim}>{preview.available ? `${preview.day}日目を受け取る · ${preview.gold.toLocaleString()}G${preview.gems > 0 ? ` + 💎${preview.gems}` : ''}` : '本日は受取済み'}</button>
+  </ModalFrame>;
+}
+
+function MonsterTapGame(props: Readonly<{ state: MinuteVanguardState; onClose: () => void }>) {
+  const [score, setScore] = useState(0);
+  const [best, setBest] = useState(() => Number(window.localStorage.getItem('minute-vanguard.tap-best') ?? '0') || 0);
+  const [target, setTarget] = useState<Readonly<{ cell: number; hero: boolean; glyph: string }> | null>(null);
+  const unlocked = unlockedMonsterLevel(props.state);
+
+  useEffect(() => {
+    const pool = enemies.filter((enemy) => enemy.monsterLevel <= unlocked);
+    const spawn = () => {
+      const hero = Math.random() < 0.14;
+      const enemy = pool[Math.floor(Math.random() * Math.max(1, pool.length))];
+      setTarget({ cell: Math.floor(Math.random() * 6), hero, glyph: hero ? '🧙' : enemy?.glyph ?? '👾' });
+    };
+    spawn();
+    const timer = window.setInterval(spawn, 720);
+    return () => window.clearInterval(timer);
+  }, [unlocked]);
+
+  const applyScore = (delta: number) => {
+    setScore((current) => {
+      const next = current + delta;
+      if (next > best) {
+        setBest(next);
+        window.localStorage.setItem('minute-vanguard.tap-best', String(next));
+      }
+      return next;
+    });
+  };
+
+  const hit = (cell: number) => {
+    if (target === null || target.cell !== cell || target.hero) applyScore(-3);
+    else applyScore(1);
+    setTarget(null);
+  };
+
+  return <ModalFrame title="モンスター叩き" onClose={props.onClose}>
+    <div className="tap-game-head"><div><span>SCORE</span><strong>{score}</strong></div><div><span>BEST</span><strong>{best}</strong></div><small>{battleCooldown(props.state).ready ? '戦闘できます' : `本戦まで ${battleCooldown(props.state).remainingSec}秒`}</small></div>
+    <p className="tap-game-rule">モンスターを叩くと +1。勇者や空マスは −3。報酬はありません。</p>
+    <div className="tap-grid">{Array.from({ length: 6 }, (_, cell) => <button key={cell} aria-label={`マス ${cell + 1}`} onClick={() => hit(cell)}>{target?.cell === cell ? <span className={target.hero ? 'hero-decoy' : 'monster-target'}>{target.glyph}</span> : null}</button>)}</div>
+    <p className="tap-game-foot">解放済み Lv.1〜{unlocked} の怪異が出現 · 自己ベストはこの端末だけに保存</p>
   </ModalFrame>;
 }
 
