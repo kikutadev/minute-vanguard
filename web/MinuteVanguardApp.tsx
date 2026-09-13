@@ -3,7 +3,7 @@ import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit'
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
 import type { ArenaBattleResult, ArenaHallEntry, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView, ArenaSeasonRewardReceipt } from '../application/arena-contract';
-import { ARENA_SEASON_REWARDS, ARENA_TIERS, arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
+import { ARENA_SEASON_REWARDS, ARENA_TIERS, arenaCombatStats, arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -1050,6 +1050,7 @@ function RankingView({ state, onPublishingChanged, onArenaTier }: Readonly<{ sta
   const [challengeBusyId, setChallengeBusyId] = useState<string | null>(null);
   const [arenaActionError, setArenaActionError] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [selectedArenaPlayerId, setSelectedArenaPlayerId] = useState<string | null>(null);
   const [publishingEnabled, setPublishingEnabled] = useState(() => getMinuteVanguardOnlineClient().isPublishingEnabled());
   const [publishBusy, setPublishBusy] = useState(false);
   const [refreshSequence, setRefreshSequence] = useState(0);
@@ -1095,6 +1096,8 @@ function RankingView({ state, onPublishingChanged, onArenaTier }: Readonly<{ sta
   }, [rankingTab, refreshSequence, onArenaTier]);
 
   const selected = remotePlayers.find((player) => player.playerId === selectedPlayerId);
+  const selectedArena = arenaEntries.find((entry) => entry.playerId === selectedArenaPlayerId);
+  const selectedArenaStats = selectedArena === undefined ? null : arenaCombatStats(selectedArena.jobId, selectedArena.loadout);
   const togglePublishing = async () => {
     if (publishBusy) return;
     const online = getMinuteVanguardOnlineClient();
@@ -1151,6 +1154,7 @@ function RankingView({ state, onPublishingChanged, onArenaTier }: Readonly<{ sta
     if (next === rankingTab) return;
     setRemoteStatus('loading');
     setSelectedPlayerId(null);
+    setSelectedArenaPlayerId(null);
     setRankingTab(next);
   };
 
@@ -1172,12 +1176,27 @@ function RankingView({ state, onPublishingChanged, onArenaTier }: Readonly<{ sta
       {arenaActionError && <p className="arena-error ranking-arena-error">{arenaActionError}</p>}
       <div className="ranking-list arena-ranking-list">{arenaEntries.map((entry) => {
         const isYou = arenaMe?.playerId === entry.playerId;
-        const label = arenaMe === null ? '参加後に挑戦' : arenaCooldownSec > 0 ? `${arenaCooldownSec}秒` : challengeBusyId === entry.playerId ? '対戦中…' : '挑戦';
-        return <div className={`rank-row arena-rank-row ${isYou ? 'you' : ''}`} key={entry.playerId}>
-          <b>{entry.isChampion ? '♛' : entry.rank}</b><span>🧑‍🚀</span><strong>{entry.displayName}<small>{jobDisplayName(entry.jobId)} · Rate {entry.rating.toLocaleString()}</small></strong><em>{entry.seasonScore.toLocaleString()} pt</em>
-          {isYou ? <i>YOU</i> : <button disabled={arenaMe === null || arenaCooldownSec > 0 || challengeBusyId !== null} onClick={() => void challengeArena(entry.playerId)}>{label}</button>}
+        const barrierActive = entry.barrierUntilMs > state.lastWallClockMs;
+        const label = barrierActive ? 'バリア' : arenaMe === null ? '参加後に挑戦' : arenaCooldownSec > 0 ? `${arenaCooldownSec}秒` : challengeBusyId === entry.playerId ? '対戦中…' : '挑戦';
+        return <div className={`rank-row arena-rank-row ${isYou ? 'you' : ''} ${selectedArenaPlayerId === entry.playerId ? 'selected' : ''}`} key={entry.playerId}>
+          <b>{entry.isChampion ? '♛' : entry.rank}</b><span>🧑‍🚀</span><button className="arena-rank-name" onClick={() => setSelectedArenaPlayerId((current) => current === entry.playerId ? null : entry.playerId)}><strong>{entry.displayName}</strong><small>{jobDisplayName(entry.jobId)} · {entry.tierName} · Rate {entry.rating.toLocaleString()}</small></button><em>{entry.seasonScore.toLocaleString()} pt</em>
+          {isYou ? <i>YOU</i> : <button disabled={barrierActive || arenaMe === null || arenaCooldownSec > 0 || challengeBusyId !== null} onClick={() => void challengeArena(entry.playerId)}>{label}</button>}
         </div>;
       })}</div>
+      {selectedArena !== undefined && selectedArenaStats !== null && <div className="arena-player-detail">
+        <header><span>SERVER ARENA PROFILE</span><strong>{selectedArena.displayName}</strong><em>{selectedArena.tierName} · Rate {selectedArena.rating.toLocaleString()}</em></header>
+        <div className="public-player-stats arena-profile-stats">
+          <div><span>HP</span><strong>{selectedArenaStats.hp}</strong></div><div><span>ATK</span><strong>{selectedArenaStats.attack}</strong></div><div><span>DEF</span><strong>{selectedArenaStats.defense}</strong></div>
+          <div><span>MAT</span><strong>{selectedArenaStats.magicAttack}</strong></div><div><span>MDF</span><strong>{selectedArenaStats.magicDefense}</strong></div><div><span>LUK</span><strong>{selectedArenaStats.luck}</strong></div>
+        </div>
+        <div className="arena-profile-loadout">{(['weapon','armor','orb'] as const).map((slot) => {
+          const id = slot === 'weapon' ? selectedArena.loadout.weaponId : slot === 'armor' ? selectedArena.loadout.armorId : selectedArena.loadout.orbId;
+          const gear = arenaGearBySlot(slot).find((item) => item.id === id);
+          return <span key={slot}><b>{gear?.icon ?? '·'}</b><small>{slot === 'weapon' ? '武器' : slot === 'armor' ? '防具' : 'オーブ'}</small><strong>{gear?.displayName ?? id}</strong></span>;
+        })}</div>
+        <div className="arena-profile-pets"><span>1体目 <b>{selectedArena.pets.primary === 'physical' ? '🐾 物理型' : selectedArena.pets.primary === 'magic' ? '✨ 魔法型' : '— なし'}</b></span><span>2体目 <b>{selectedArena.pets.secondary === 'physical' ? '🐾 物理型' : selectedArena.pets.secondary === 'magic' ? '✨ 魔法型' : '— なし'}</b></span></div>
+        {selectedArena.barrierUntilMs > state.lastWallClockMs && <p className="arena-profile-barrier">🛡 防衛バリア中 · 指名対戦できません</p>}
+      </div>}
       {arenaMe === null && remoteStatus === 'ready' && <p className="ranking-arena-hint">バトル → アリーナで参加するとランキングから指名対戦できます。</p>}
       {arenaBattle !== null && <ArenaBattleModal result={arenaBattle} onClose={() => setArenaBattle(null)} />}
     </> : <>

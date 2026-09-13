@@ -393,7 +393,8 @@ function parseArenaBattle(value: unknown): ArenaBattleResult {
 
 function parseArenaLeaderboardEntry(value: unknown): ArenaLeaderboardEntry {
   if (!isRecord(value) || !Number.isFinite(value.rank) || typeof value.playerId !== 'string' || typeof value.displayName !== 'string'
-    || typeof value.jobId !== 'string' || !Number.isFinite(value.rating) || !Number.isFinite(value.seasonScore) || typeof value.isChampion !== 'boolean') {
+    || typeof value.jobId !== 'string' || !Number.isFinite(value.rating) || !Number.isFinite(value.seasonScore) || !Number.isFinite(value.barrierUntilMs)
+    || !isArenaLoadout(value.loadout) || !isArenaPetLoadout(value.pets) || typeof value.tierId !== 'string' || typeof value.tierName !== 'string' || typeof value.isChampion !== 'boolean') {
     throw new PublicProfileOnlineError(502, 'invalid-arena-leaderboard-entry', value);
   }
   return value as unknown as ArenaLeaderboardEntry;

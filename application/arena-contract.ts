@@ -36,6 +36,11 @@ export type ArenaLeaderboardEntry = Readonly<{
   wins: number;
   losses: number;
   draws: number;
+  barrierUntilMs: number;
+  loadout: ArenaLoadout;
+  pets: ArenaPetLoadout;
+  tierId: string;
+  tierName: string;
   isChampion: boolean;
 }>;
 

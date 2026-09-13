@@ -528,7 +528,8 @@ async function handleArenaLeaderboard(request, env, gameId) {
   const seasonKey = arenaSeasonKey(Date.now());
   await finalizeArenaPastSeasons(env.PUBLIC_PLAYER_DB, gameId, seasonKey, Date.now());
   const rows = await env.PUBLIC_PLAYER_DB.prepare(`
-    SELECT player_id, display_name, job_id, rating, best_rating, season_score, wins, losses, draws
+    SELECT player_id, display_name, job_id, rating, best_rating, season_score, wins, losses, draws,
+      barrier_until_ms, arena_weapon_id, arena_armor_id, arena_orb_id, arena_pet_primary, arena_pet_secondary
     FROM arena_players WHERE game_id = ? AND season_key = ?
     ORDER BY season_score DESC, rating DESC, updated_at_ms ASC, player_id ASC LIMIT ?
   `).bind(gameId, seasonKey, limit).all();
@@ -536,6 +537,11 @@ async function handleArenaLeaderboard(request, env, gameId) {
     rank: index + 1, playerId: row.player_id, displayName: row.display_name, jobId: row.job_id,
     rating: Number(row.rating), bestRating: Number(row.best_rating), seasonScore: Number(row.season_score),
     wins: Number(row.wins), losses: Number(row.losses), draws: Number(row.draws),
+    barrierUntilMs: Number(row.barrier_until_ms),
+    loadout: { weaponId: row.arena_weapon_id, armorId: row.arena_armor_id, orbId: row.arena_orb_id },
+    pets: { primary: row.arena_pet_primary, secondary: row.arena_pet_secondary },
+    tierId: arenaTierForScore(Number(row.season_score)).id,
+    tierName: arenaTierForScore(Number(row.season_score)).displayName,
     isChampion: index === 0 && Number(row.season_score) > 0,
   }));
   return json(request, { seasonKey, entries });

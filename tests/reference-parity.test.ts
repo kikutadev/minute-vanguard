@@ -144,6 +144,8 @@ describe('public reference parity locks', () => {
     expect(hero60Reference.arena.namedChallenge.sharesRatingRecordBarrierAndDailyWinLimit).toBe(true);
     expect(hero60Reference.arena.achievementTitles.tierReachCount).toBe(10);
     expect(hero60Reference.arena.achievementTitles.championTitle).toBe(true);
+    expect(hero60Reference.arena.leaderboardProfiles.inspectableTopCount).toBe(10);
+    expect(hero60Reference.arena.leaderboardProfiles.barrierReplacesChallengeButton).toBe(true);
   });
 });
 

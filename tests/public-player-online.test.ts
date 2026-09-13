@@ -113,7 +113,7 @@ describe('MinuteVanguardOnlineClient', () => {
       if (url.endsWith('/arena/loadout')) return jsonResponse({ arena: { ...arena, loadout: JSON.parse(String(init?.body)) } });
       if (url.endsWith('/arena/barrier')) return jsonResponse({ arena: { ...arena, barrierEnabled: false } });
       if (url.endsWith('/arena/pets')) return jsonResponse({ arena: { ...arena, pets: { primary: 'physical', secondary: 'none' } } });
-      if (url.includes('/arena/leaderboard')) return jsonResponse({ entries: [{ rank: 1, playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1016, bestRating: 1016, seasonScore: 20, wins: 1, losses: 0, draws: 0, isChampion: true }] });
+      if (url.includes('/arena/leaderboard')) return jsonResponse({ entries: [{ rank: 1, playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1016, bestRating: 1016, seasonScore: 20, wins: 1, losses: 0, draws: 0, barrierUntilMs: 120_000, loadout: arena.loadout, pets: arena.pets, tierId: 'iron', tierName: 'アイアン', isChampion: true }] });
       if (url.endsWith('/arena/hall')) return jsonResponse({ entries: [{ seasonKey: '2026-08-31', finalizedAtMs: 10, participantCount: 2, playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1100, seasonScore: 400 }] });
       if (url.endsWith('/arena/rewards') && method === 'GET') return jsonResponse({ rewards: [{ receiptId: 'receipt-1', seasonKey: '2026-08-31', rank: 1, tierId: 'bronze', gold: 201000, gems: 125, baseGold: 1000, baseGems: 5, championBonusGold: 200000, championBonusGems: 120, grantsMasterToken: false, champion: true }] });
       if (url.endsWith('/arena/rewards/ack') && method === 'POST') return jsonResponse({ receiptId: 'receipt-1', acknowledged: true });
@@ -131,7 +131,11 @@ describe('MinuteVanguardOnlineClient', () => {
     expect(battle.battle.ratingDelta).toBe(16);
     expect(battle.battle.promotion).toBeNull();
     expect(battle.arena.seasonScore).toBe(20);
-    expect((await client.listArenaLeaderboard())[0]?.isChampion).toBe(true);
+    const leaderboardEntry = (await client.listArenaLeaderboard())[0];
+    expect(leaderboardEntry?.isChampion).toBe(true);
+    expect(leaderboardEntry?.barrierUntilMs).toBe(120_000);
+    expect(leaderboardEntry?.loadout).toEqual(arena.loadout);
+    expect(leaderboardEntry?.pets).toEqual(arena.pets);
     expect((await client.listArenaHall())[0]?.displayName).toBe('勇者');
     expect((await client.listArenaSeasonRewards())[0]?.champion).toBe(true);
     await client.acknowledgeArenaSeasonReward('receipt-1');

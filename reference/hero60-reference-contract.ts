@@ -44,6 +44,7 @@ export const hero60Reference = {
     pets: { everyTurn: true, tamerSecondPet: true, tamerSecondMultiplier: 0.6, tamerBonusPoints: 40, ninjaDodge: 0.30, wraithDodge: 0.70, exactBaseRatePublic: false },
     namedChallenge: { fromRanking: true, goldTransfer: false, sharesRatingRecordBarrierAndDailyWinLimit: true },
     achievementTitles: { tierReachCount: 10, championTitle: true },
+    leaderboardProfiles: { inspectableTopCount: 10, barrierReplacesChallengeButton: true },
     seasonRewards: {
       basedOnFinalTier: true,
       includesGold: true,
