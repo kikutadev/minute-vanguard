@@ -16,7 +16,7 @@ import {
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
-import type { BattleResult, EquipmentData, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
+import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
   activateRareGuarantee,
   activateBattleBoost,
@@ -24,6 +24,7 @@ import {
   availableJobs,
   battleCooldown,
   buyEquipment,
+  buyGoldBag,
   buyPetSnacks,
   buyPermanentUpgrade,
   buyDailyTitle,
@@ -50,6 +51,7 @@ import {
   freeCooldownSkipsRemaining,
   gemBalance,
   goldBalance,
+  goldBagOffers,
   moveEquippedTitle,
   healAtInn,
   jobChangeCost,
@@ -271,6 +273,10 @@ export function MinuteVanguardApp() {
           const result = buyDailyTitle(state, titleId);
           if (!result.accepted) setNotice(result.reason === 'insufficient-gems' ? `${TITLE_SHOP_PRICE}ジェムが必要です` : '今日はこの肩書きを購入できません');
           else commit(result.state, '肩書きを1個獲得しました');
+        }} onBuyGoldBag={(bagId) => {
+          const result = buyGoldBag(state, bagId);
+          if (!result.accepted) setNotice(result.reason === 'not-enough-wins' ? 'ゴールド袋は直近のモンスター勝利が2回以上必要です' : result.reason === 'insufficient-gems' ? 'ジェムが足りません' : '購入できません');
+          else commit(result.state, 'ゴールド袋を開けました');
         }} />}
         {tab === 'collection' && <CollectionView state={state} />}
         {tab === 'ranking' && <RankingView state={state} />}
@@ -419,7 +425,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
   </section>;
 }
 
-function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600) => void; onBuyTitle: (titleId: string) => void }>) {
+function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600) => void; onBuyTitle: (titleId: string) => void; onBuyGoldBag: (bagId: GoldBagId) => void }>) {
   const [active, setActive] = useState<'permanent' | 'boost' | 'title' | 'gem'>('permanent');
   return <section className="page-section shop-page">
     <h1>ショップ</h1>
@@ -434,12 +440,24 @@ function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: Perm
           </button>;
         })}
       </div>
-      <div className="gold-bag-card"><strong>ゴールド袋</strong><p>直近の戦果に応じたGoldをジェムでまとめて受け取る機能。</p><button disabled>戦果データ準備中</button></div>
+      <GoldBagShop state={props.state} onBuy={props.onBuyGoldBag} />
     </>}
     {active === 'boost' && <TimeBoostShop state={props.state} onBuy={props.onBuyTimeBoost} />}
     {active === 'title' && <DailyTitleShop state={props.state} onBuy={props.onBuyTitle} />}
     {active === 'gem' && <div className="empty-state">ソロ版ではジェム購入ストアを接続していません。</div>}
   </section>;
+}
+
+function GoldBagShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (bagId: GoldBagId) => void }>) {
+  const offers = goldBagOffers(props.state);
+  const history = props.state.gameData.recentVictoryMonsterLevels;
+  return <div className="gold-bag-shop">
+    <div className="gold-bag-head"><div><strong>ゴールド袋</strong><small>直近10勝のモンスターレベルから中身が変化</small></div><em>{history.length}/10 戦記録</em></div>
+    <div className="gold-bag-history">{Array.from({ length: 10 }, (_, index) => <span key={index} className={index < 10 - history.length ? 'empty' : ''}>{index < 10 - history.length ? '−' : `Lv.${history[index - (10 - history.length)]}`}</span>)}</div>
+    {history.length < 2 && <p className="gold-bag-lock">モンスター戦で2勝すると購入できます。</p>}
+    <div className="gold-bag-offers">{offers.map((offer) => <button key={offer.id} disabled={!offer.available} onClick={() => props.onBuy(offer.id)}><span>{offer.id === 'coinPouch' ? '👛' : offer.id === 'sack' ? '🎒' : '🏦'}</span><div><strong>{offer.label}</strong><small>{offer.goldAmount.toLocaleString()} G</small></div><em>💎{offer.gemCost}</em></button>)}</div>
+    <p className="shop-lead">装備・オーブ・ブーストのGold倍率は袋の中身に入りません。高いモンスターレベルを安定して倒すほど増えます。</p>
+  </div>;
 }
 
 function DailyTitleShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (titleId: string) => void }>) {
@@ -499,12 +517,13 @@ function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         const enemyEncounters = state.gameData.encounterCounts[enemy.id] ?? 0;
         const mutatedEncounters = state.gameData.mutatedEncounterCounts[enemy.id] ?? 0;
         const captured = state.gameData.ownedPetEnemyIds.includes(enemy.id);
+        const mutatedCaptured = state.gameData.mutatedPetEnemyIds.includes(enemy.id);
         return <article className={`monster-card ${seen ? '' : 'locked'} ${captured ? 'captured' : ''}`} key={enemy.id}>
           <span className="monster-glyph">{seen ? enemy.glyph : '?'}</span>
           <strong>{seen ? enemy.displayName : '???'}</strong>
           <small>{seen ? enemy.rarity.toUpperCase() : '未発見'}</small>
           {seen && <div className="monster-record"><span>遭遇 {enemyEncounters}</span><span>討伐 {enemyKills}</span>{mutatedEncounters > 0 && <span>変異 {mutatedEncounters}</span>}</div>}
-          {seen && <em>{captured ? '✓ 捕獲済' : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
+          {seen && <em>{captured ? `✓ 捕獲済${mutatedCaptured ? ' · ★変異' : ''}` : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
         </article>;
       })}
     </div>
@@ -601,7 +620,7 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
       {props.result.permanentStatReward && <p className="purple-highlight">恒久 {STAT_LABELS[props.result.permanentStatReward.stat]} +{props.result.permanentStatReward.amount}</p>}
       {props.result.levelGrowths.map((growth) => <p key={growth.level} className={growth.greatGrowth ? 'great-growth' : ''}>Lv.{growth.level} UP {growth.greatGrowth ? '★ 大成長！' : ''}</p>)}
       {(props.result.droppedItemInstanceId || props.result.droppedOrbInstanceId) && <p>🎁 ドロップを獲得しました</p>}
-      {props.result.capturedPetEnemyId && <p className="pet-capture-highlight">🐾 モンスターがなついて仲間になった！</p>}
+      {props.result.capturedPetEnemyId && <p className="pet-capture-highlight">{props.result.capturedPetMutated ? '★ 変異種がなついた！ 成長ボーナス+1%' : '🐾 モンスターがなついて仲間になった！'}</p>}
       {props.result.droppedTitleId && <p className="title-drop-highlight">◇ 肩書き「{titleDefinitions.find((definition) => definition.id === props.result.droppedTitleId)?.displayName ?? '???'}」{props.result.titleCopyAdded ? 'を獲得！' : 'はLv.5のため増えなかった'}</p>}
       <button className="modal-primary" onClick={props.onClose}>閉じる</button>
     </div>}
@@ -689,11 +708,12 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId:
     {owned.length === 0 ? <p className="empty-state">まだペットはいません。30体討伐して捕獲を狙うか、ペットガチャで仲間を増やしてください。</p> : <div className="pet-list">{owned.map((pet) => {
       const active = props.state.gameData.activePetEnemyIds.includes(pet.id);
       const kills = pet.source === 'capture' ? props.state.gameData.killCounts[pet.id] ?? 0 : null;
+      const mutatedCaptured = pet.source === 'capture' && props.state.gameData.mutatedPetEnemyIds.includes(pet.id);
       const level = petTrainingLevel(props.state, pet.id);
       const cap = petTrainingCap(pet.id) ?? level;
       return <article key={pet.id} className={`pet-row ${active ? 'active' : ''}`}>
         <span className="pet-glyph">{pet.glyph}</span>
-        <div className="pet-row-main"><strong>{pet.displayName}</strong><small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}`}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
+        <div className="pet-row-main"><strong>{pet.displayName}</strong><small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}${mutatedCaptured ? ' · ★変異捕獲' : ''}`}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
         <div className="pet-row-actions"><button className={active ? 'active' : ''} onClick={() => props.onToggle(pet.id, !active)}>{active ? '参戦中' : '編成'}</button><button disabled={props.state.gameData.petSnacks <= 0 || level >= cap} onClick={() => props.onTrain(pet.id)}>{level >= cap ? 'MAX' : '🍖 育成'}</button></div>
       </article>;
     })}</div>}

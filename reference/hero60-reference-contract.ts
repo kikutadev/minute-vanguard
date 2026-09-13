@@ -31,6 +31,12 @@ export const hero60Reference = {
     jackpot: { x2: 0.08, x3: 0.03, x5: 0.01, x10: 0.003 },
     permanentStatChance: 0.01,
   },
+  goldBags: {
+    gemCosts: [30, 100, 300] as const,
+    historyWins: 10,
+    minimumWins: 2,
+    ignoresGoldMultipliers: true,
+  },
   timeBoosts: {
     durations: [
       { durationSec: 180, gemCost: 30 },

@@ -85,6 +85,19 @@ describe('pet training', () => {
     if (!rejected.accepted) expect(rejected.reason).toBe('max-training');
   });
 
+  it('adds a separate +1% growth bonus for each captured mutated form without increasing pet count', () => {
+    const initial = withPet(createInitialState(0, 905));
+    const mutated: MinuteVanguardState = {
+      ...initial,
+      gameData: {
+        ...initial.gameData,
+        mutatedPetEnemyIds: ['enemy.pebble'],
+      },
+    };
+    expect(mutated.gameData.player.petCount).toBe(1);
+    expect(levelGrowthMultiplier(mutated)).toBeCloseTo(1.02);
+  });
+
   it('adds +1% level-growth bonus for every 20 total pet-training levels', () => {
     const initial = withPet(createInitialState(0, 904));
     const trained: MinuteVanguardState = {

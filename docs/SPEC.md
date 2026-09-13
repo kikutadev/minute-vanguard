@@ -141,7 +141,7 @@ The codex is split by monster level and records encounters, defeats, mutated enc
 
 ## Pets
 
-A monster becomes capture-eligible after 30 successful defeats. Every later victory against that monster rolls 1% capture. One copy of each monster can be owned.
+A monster becomes capture-eligible after 30 successful defeats. Every later victory against that monster rolls 1% capture. One normal copy of each monster can be owned. Capturing its mutated form is tracked separately and adds another +1% level-up growth bonus without increasing the owned-pet count.
 
 - normal jobs: one active pet
 - Tamer: two active pets
@@ -182,3 +182,11 @@ The current independent Pages build is local-first. Real Ranking, PvP/Champion, 
 ## Deployment
 
 Vite builds relative assets into `dist/`. GitHub Actions runs verification/build and uploads only `dist/` to GitHub Pages. Source files and vendored development files are never part of the Pages artifact.
+
+## Gold bags
+
+The Shop exposes three repeatable Gold bags at 30 / 100 / 300 Gem. They unlock after two monster victories and use only the rolling last-ten monster-victory levels as their input. Equipment, orb, title and timed Gold multipliers do not change bag contents. The exact payout curve is intentionally Minute Vanguard balance because the public reference does not publish its formula.
+
+## Mutated pet forms
+
+Mutations are disabled through the first 20 total victories. After that, mutated monsters can be captured independently from the normal form after the normal 30-kill capture gate. A captured mutated form contributes a separate +1% level-up growth bonus but does not count as an additional pet species for party or Tamer-unlock counts.

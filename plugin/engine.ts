@@ -64,6 +64,7 @@ import type {
   DailyMissionProgress,
   EnemyDefinition,
   EquipmentData,
+  GoldBagId,
   JobDefinition,
   LevelGrowthResult,
   MinuteVanguardState,
@@ -94,6 +95,11 @@ const PET_SNACK_BUNDLE_SIZE = 100;
 const PET_TRAINING_CAP_BY_RARITY: Readonly<Record<MonsterRarity, number>> = {
   common: 50, uncommon: 60, rare: 70, epic: 80, legendary: 90, boss: 100,
 };
+const GOLD_BAG_DEFINITIONS: readonly Readonly<{ id: GoldBagId; label: string; gemCost: number; payoutMultiplier: number }>[] = [
+  { id: 'coinPouch', label: '小銭袋', gemCost: 30, payoutMultiplier: 20 },
+  { id: 'sack', label: 'ずだ袋', gemCost: 100, payoutMultiplier: 75 },
+  { id: 'vault', label: '大金庫', gemCost: 300, payoutMultiplier: 240 },
+];
 const ORB_BASE_CAPACITY = 10;
 const ORB_CAPACITY_EXPANSION_COST = 100;
 const ORB_REROLL_COSTS = [50, 100, 200, 400] as const;
@@ -207,6 +213,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       discoveredEnemyIds: [],
       lastDefeatedEnemyId: null,
       consecutiveDefeats: 0,
+      recentVictoryMonsterLevels: [],
       nextItemSequence: 1,
       lastBattle: null,
       rareGuaranteeActive: false,
@@ -221,6 +228,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       },
       freeCooldownSkipUsage: { dayKey: jstDayKey(nowMs), used: 0 },
       ownedPetEnemyIds: [],
+      mutatedPetEnemyIds: [],
       ownedGachaPetIds: [],
       activePetEnemyIds: [],
       petTraining: {},
@@ -253,6 +261,8 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
+        recentVictoryMonsterLevels: state.gameData.recentVictoryMonsterLevels ?? [],
+        mutatedPetEnemyIds: state.gameData.mutatedPetEnemyIds ?? [],
         ownedGachaPetIds: state.gameData.ownedGachaPetIds ?? [],
         player: { ...state.gameData.player, petCount: (state.gameData.ownedPetEnemyIds ?? []).length + (state.gameData.ownedGachaPetIds ?? []).length },
         petTraining: state.gameData.petTraining ?? Object.fromEntries([...(state.gameData.ownedPetEnemyIds ?? []), ...(state.gameData.ownedGachaPetIds ?? [])].map((id) => [id, { trainingLevel: 0, nickname: null }])),
@@ -493,7 +503,8 @@ export function petTrainingGrowthBonusPct(state: MinuteVanguardState): number {
 
 export function levelGrowthMultiplier(state: MinuteVanguardState): number {
   const ownedPetBonusPct = ownedPetIds(state).length;
-  return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct + petTrainingGrowthBonusPct(state)) / 100;
+  const mutatedPetBonusPct = state.gameData.mutatedPetEnemyIds.length;
+  return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct + mutatedPetBonusPct + petTrainingGrowthBonusPct(state)) / 100;
 }
 
 export function petTrainingCap(enemyId: string): number | null {
@@ -771,6 +782,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   let droppedItemInstanceId: string | null = null;
   let droppedOrbInstanceId: string | null = null;
   let capturedPetEnemyId: string | null = null;
+  let capturedPetMutated = false;
   let droppedTitleId: string | null = null;
   let titleCopyAdded = false;
 
@@ -847,15 +859,22 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     }
 
     const killsAfterThisBattle = (nextState.gameData.killCounts[enemy.id] ?? 0) + 1;
-    if (killsAfterThisBattle >= 30 && !nextState.gameData.ownedPetEnemyIds.includes(enemy.id)) {
+    const normalPetOwned = nextState.gameData.ownedPetEnemyIds.includes(enemy.id);
+    const mutatedPetOwned = nextState.gameData.mutatedPetEnemyIds.includes(enemy.id);
+    const captureNeeded = mutated ? !mutatedPetOwned : !normalPetOwned;
+    if (killsAfterThisBattle >= 30 && captureNeeded) {
       const captureRoll = draw(nextState, ids.rng.loot);
       nextState = captureRoll.state;
       const captureChance = 0.01 * (job.id === 'job.tamer' ? 1.5 : 1) + titleEffectValue(nextState, 'capture');
       if (captureRoll.value < captureChance) {
         capturedPetEnemyId = enemy.id;
-        const ownedPetEnemyIds = [...nextState.gameData.ownedPetEnemyIds, enemy.id];
+        capturedPetMutated = mutated;
+        const ownedPetEnemyIds = normalPetOwned ? nextState.gameData.ownedPetEnemyIds : [...nextState.gameData.ownedPetEnemyIds, enemy.id];
+        const mutatedPetEnemyIds = mutated && !mutatedPetOwned
+          ? [...nextState.gameData.mutatedPetEnemyIds, enemy.id]
+          : nextState.gameData.mutatedPetEnemyIds;
         const maxActive = job.id === 'job.tamer' ? 2 : 1;
-        const activePetEnemyIds = nextState.gameData.activePetEnemyIds.length < maxActive
+        const activePetEnemyIds = !normalPetOwned && nextState.gameData.activePetEnemyIds.length < maxActive
           ? [...nextState.gameData.activePetEnemyIds, enemy.id]
           : nextState.gameData.activePetEnemyIds;
         nextState = {
@@ -863,6 +882,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
           gameData: {
             ...nextState.gameData,
             ownedPetEnemyIds,
+            mutatedPetEnemyIds,
             activePetEnemyIds,
             petTraining: {
               ...nextState.gameData.petTraining,
@@ -961,6 +981,9 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       discoveredEnemyIds: discovered,
       lastDefeatedEnemyId: outcome === 'victory' ? enemy.id : nextState.gameData.lastDefeatedEnemyId,
       consecutiveDefeats: outcome === 'victory' ? streak : 0,
+      recentVictoryMonsterLevels: outcome === 'victory'
+        ? [...nextState.gameData.recentVictoryMonsterLevels, enemy.monsterLevel].slice(-10)
+        : nextState.gameData.recentVictoryMonsterLevels,
       rareGuaranteeActive: false,
       battleBoostActive: false,
       missionProgress: {
@@ -1014,6 +1037,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     droppedOrbInstanceId,
     firstDefeat,
     capturedPetEnemyId,
+    capturedPetMutated,
     droppedTitleId,
     titleCopyAdded,
   };
@@ -1024,7 +1048,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
 
   return accept(nextState, [event(nextState, 'battleResolved', `${battleIndex}`, {
     enemyId: enemy.id, outcome, mutated, goldDelta, expGained, gemGained, streak, jackpotMultiplier,
-    droppedItemInstanceId, droppedOrbInstanceId, capturedPetEnemyId,
+    droppedItemInstanceId, droppedOrbInstanceId, capturedPetEnemyId, capturedPetMutated,
   })]);
 }
 
@@ -1399,6 +1423,44 @@ export function goldBalance(state: MinuteVanguardState): number {
 
 export function gemBalance(state: MinuteVanguardState): number {
   return readCurrency(state.currencies, ids.currency.gem).toNumber();
+}
+
+export function goldBagOffers(state: MinuteVanguardState): readonly Readonly<{ id: GoldBagId; label: string; gemCost: number; goldAmount: number; available: boolean }>[] {
+  const history = state.gameData.recentVictoryMonsterLevels;
+  const available = history.length >= 2;
+  const basis = goldBagReferenceBaseGold(history);
+  return GOLD_BAG_DEFINITIONS.map((definition) => ({
+    id: definition.id,
+    label: definition.label,
+    gemCost: definition.gemCost,
+    goldAmount: Math.max(1, Math.round(basis * definition.payoutMultiplier)),
+    available,
+  }));
+}
+
+export function buyGoldBag(
+  state: MinuteVanguardState,
+  bagId: GoldBagId,
+): CommandResult<MinuteVanguardState, 'unknown-bag' | 'not-enough-wins' | 'insufficient-gems'> {
+  const offer = goldBagOffers(state).find((candidate) => candidate.id === bagId);
+  if (offer === undefined) return reject(state, 'unknown-bag');
+  if (!offer.available) return reject(state, 'not-enough-wins');
+  const spend = spendCurrency(state, ids.currency.gem, offer.gemCost, `gold-bag.${bagId}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const rewarded = grantCurrency(spend.state, ids.currency.gold, offer.goldAmount, `gold-bag.${bagId}`);
+  return accept(rewarded, [event(rewarded, 'goldBagPurchased', bagId, { gemCost: offer.gemCost, goldAmount: offer.goldAmount, recentLevels: state.gameData.recentVictoryMonsterLevels })]);
+}
+
+function goldBagReferenceBaseGold(recentLevels: readonly number[]): number {
+  const paddedLevels = [...recentLevels.slice(-10)];
+  while (paddedLevels.length < 10) paddedLevels.unshift(1);
+  const averageGoldByLevel = new Map<number, number>();
+  for (const level of new Set(enemies.map((enemy) => enemy.monsterLevel))) {
+    const pool = enemies.filter((enemy) => enemy.monsterLevel === level);
+    averageGoldByLevel.set(level, pool.reduce((sum, enemy) => sum + enemy.gold, 0) / Math.max(1, pool.length));
+  }
+  const fallback = averageGoldByLevel.get(1) ?? 20;
+  return paddedLevels.reduce((sum, level) => sum + (averageGoldByLevel.get(level) ?? fallback), 0) / 10;
 }
 
 export function titleCostLimitForLevel(level: number): number {

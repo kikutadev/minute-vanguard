@@ -48,6 +48,7 @@
   - Evasion 3/6/9/12/15%
   - Cooldown 1/2/3/4/5秒
 - 同一敵30討伐で捕獲解禁、勝利時1%、通常1体/テイマー2体
+- 変異種の別捕獲で主人公レベルアップ成長+1%（通常ペット所持+1%とは別枠）
 - ペットおやつ: 1時間1個の無料チャージ、無料チャージ上限100、100Gemで100個、総訓練Lv20ごとに成長+1%
 - 変異種は累計討伐20体までは出現しない
 - Daily 5個 / 5カテゴリ / 22候補 / JST 0時 / 達成順3・3・4・5・5Gem（合計20）
@@ -62,6 +63,7 @@
 - Monster roster density: public reference is 50 monsters per level; Minute Vanguard currently implements original Lv.1/Lv.2 tables at 50 each.
 - Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
+- Gold bags: 30/100/300 Gem, based only on rolling last-ten monster-victory levels, unavailable before two wins, unaffected by current Gold multipliers. Exact payout equation remains product-owned because the public guide does not expose it.
 
 ### Public behavior known, exact table not yet public-locked
 
@@ -77,6 +79,10 @@
 
 1. Orb replacement flow when inventory is full
 2. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
-3. Gold bags using last-ten-win history
-4. Login bonus 7-day cycle
-5. Server boundary for real ranking / PvP / raid
+3. Login bonus 7-day cycle
+4. Server boundary for real ranking / PvP / raid
+
+### Additional solo parity locked in current implementation
+
+- Gold bags cost 30 / 100 / 300 Gem, require at least two monster victories, and derive contents from the last ten monster-victory levels without applying Gold multipliers. The exact payout curve is product-owned because the public guide does not expose its internal formula.
+- Mutated monsters do not appear until 20 total victories. Capturing a mutated form grants a separate +1% level-up growth bonus while keeping the species as one owned pet for party-count purposes.

@@ -12,6 +12,7 @@ export type EquipmentKind = 'weapon' | 'armor' | 'orb';
 export type MonsterRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'boss';
 export type OrbRank = 'F' | 'E' | 'D' | 'C' | 'B' | 'A' | 'S' | 'SS' | 'SSS';
 export type TimeBoostKind = 'rush' | 'exp' | 'gold';
+export type GoldBagId = 'coinPouch' | 'sack' | 'vault';
 export type TimeBoostState = Readonly<Record<TimeBoostKind, number>>;
 export type TitleShopState = Readonly<{ dayKey: string; offeredTitleIds: readonly string[]; purchasedTitleIds: readonly string[] }>;
 
@@ -141,6 +142,7 @@ export type BattleResult = Readonly<{
   droppedOrbInstanceId: string | null;
   firstDefeat: boolean;
   capturedPetEnemyId: string | null;
+  capturedPetMutated: boolean;
   droppedTitleId: string | null;
   titleCopyAdded: boolean;
 }>;
@@ -183,6 +185,7 @@ export type MinuteVanguardGameData = Readonly<{
   discoveredEnemyIds: readonly string[];
   lastDefeatedEnemyId: string | null;
   consecutiveDefeats: number;
+  recentVictoryMonsterLevels: readonly number[];
   nextItemSequence: number;
   lastBattle: BattleResult | null;
   rareGuaranteeActive: boolean;
@@ -190,6 +193,7 @@ export type MinuteVanguardGameData = Readonly<{
   permanentUpgrades: PermanentUpgradeState;
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];
+  mutatedPetEnemyIds: readonly string[];
   ownedGachaPetIds: readonly string[];
   activePetEnemyIds: readonly string[];
   petTraining: Readonly<Record<string, PetTrainingState>>;
