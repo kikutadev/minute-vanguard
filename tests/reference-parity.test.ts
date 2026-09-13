@@ -3,6 +3,10 @@ import { GameNumber } from 'idle-game-kit';
 import { battleCooldownDefinition, enemies, ids, jobs, loadoutDefinition, orbRanks } from '../definitions/game-definitions';
 import { hero60Reference } from '../reference/hero60-reference-contract';
 import {
+  ARENA_COOLDOWN_MS, ARENA_DAILY_WIN_LIMIT, ARENA_DEFENSE_BARRIER_MS, ARENA_START_RATING, ARENA_TIERS,
+  arenaAttackSeasonScore, arenaDefenseSeasonScore, arenaRatingDeltas, arenaWeekendMultiplier,
+} from '../application/arena-domain';
+import {
   activateRareGuarantee,
   advanceFromWallClock,
   battleCooldown,
@@ -104,6 +108,26 @@ describe('public reference parity locks', () => {
     if (!result.accepted) return;
     const advanced = advanceFromWallClock(result.state, result.state.lastWallClockMs + hero60Reference.battle.beginnerCooldownSec * 1_000).state;
     expect(battleCooldown(advanced).ready).toBe(true);
+  });
+
+  it('locks the current public Arena cadence, daily guard and tier thresholds', () => {
+    expect(ARENA_START_RATING).toBe(hero60Reference.arena.initialRating);
+    expect(ARENA_COOLDOWN_MS / 1_000).toBe(hero60Reference.arena.fixedCooldownSec);
+    expect(ARENA_DAILY_WIN_LIMIT).toBe(hero60Reference.arena.sameOpponentWinsPerJstDay);
+    expect(ARENA_DEFENSE_BARRIER_MS / 1_000).toBe(hero60Reference.arena.defenseBarrierSec);
+    expect(ARENA_TIERS.map((tier) => tier.threshold)).toEqual(hero60Reference.arena.tierThresholds);
+  });
+
+  it('locks public Arena score boundaries while leaving the hidden rating formula product-owned', () => {
+    const weekday = Date.parse('2026-09-10T03:00:00Z');
+    const weekend = Date.parse('2026-09-11T03:00:00Z');
+    expect(arenaAttackSeasonScore(100, 'win', weekday)).toBe(hero60Reference.arena.attackerWinScoreMin);
+    expect(arenaAttackSeasonScore(9_999, 'win', weekday)).toBe(hero60Reference.arena.attackerWinScoreMax);
+    expect(arenaAttackSeasonScore(1_000, 'loss', weekday)).toBe(hero60Reference.arena.attackerLossOrDrawScore);
+    expect(arenaWeekendMultiplier(weekend)).toBe(hero60Reference.arena.weekendScoreMultiplier);
+    expect(arenaDefenseSeasonScore(1_500, weekday)).toBe(5);
+    expect(arenaRatingDeltas(1_000, 1_700, 'win')).toEqual({ attacker: 0, defender: 0 });
+    expect(hero60Reference.arena.exactRatingFormulaPublic).toBe(false);
   });
 });
 

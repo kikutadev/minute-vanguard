@@ -83,4 +83,54 @@ describe('MinuteVanguardOnlineClient', () => {
     expect(client.isPublishingEnabled()).toBe(false);
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(true);
   });
+
+  it('joins Arena with the anonymous owner and uses server-owned battle/ranking endpoints', async () => {
+    const storage = new MemoryStorage();
+    const arena = {
+      playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1000, bestRating: 1000,
+      seasonKey: '2026-09-07', seasonScore: 0, seasonAttackScore: 0, seasonDefenseScore: 0,
+      wins: 0, losses: 0, draws: 0, nextAttackAtMs: 0, barrierUntilMs: 0, barrierEnabled: true,
+      rank: 1, tierId: 'iron', tierName: 'アイアン', nextTierName: 'ブロンズ', nextTierScore: 300,
+    };
+    const requests: Array<{ url: string; method: string }> = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      requests.push({ url, method });
+      if (url.endsWith('/players/claim')) return jsonResponse({ playerId: 'arena-1', writeToken: 'a'.repeat(43), revision: 0 }, 201);
+      if (url.endsWith('/arena/battles/random')) return jsonResponse({
+        arena: { ...arena, rating: 1016, seasonScore: 20, wins: 1, nextAttackAtMs: 60_000 },
+        battle: {
+          battleId: 'battle-1', combatVersion: 1, resolvedAtMs: 1_000, seed: 4, outcome: 'win', firstSide: 'attacker',
+          attackerMaxHp: 118, defenderMaxHp: 118, attackerHpAfter: 50, defenderHpAfter: 0, turns: [],
+          opponent: { playerId: 'opponent-1', displayName: 'Rival', jobId: 'job.mage', ratingBefore: 1000, isBot: false },
+          ratingBefore: 1000, ratingAfter: 1016, ratingDelta: 16, seasonScoreGain: 20, seasonScoreAfter: 20,
+          weekendMultiplier: 2, nextAttackAtMs: 60_000,
+        },
+      });
+      if (url.endsWith('/arena/barrier')) return jsonResponse({ arena: { ...arena, barrierEnabled: false } });
+      if (url.includes('/arena/leaderboard')) return jsonResponse({ entries: [{ rank: 1, playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1016, bestRating: 1016, seasonScore: 20, wins: 1, losses: 0, draws: 0, isChampion: true }] });
+      if (url.endsWith('/arena/history')) return jsonResponse({ entries: [{ battleId: 'battle-1', resolvedAtMs: 1_000, role: 'attack', opponentName: 'Rival', opponentJobId: 'job.mage', outcome: 'win', ratingDelta: 16, scoreGain: 20 }] });
+      if (method === 'DELETE' && url.endsWith('/arena')) return new Response(null, { status: 204 });
+      if (method === 'POST' && url.endsWith('/arena')) return jsonResponse({ arena }, 201);
+      return jsonResponse({ arena });
+    });
+    const fetcher = fetchMock as unknown as typeof fetch;
+    const client = new MinuteVanguardOnlineClient({ apiBaseUrl: 'https://api.example.test', fetcher, storage });
+
+    const joined = await client.joinArena(createInitialState(0, 9));
+    expect(joined.rating).toBe(1000);
+    const battle = await client.randomArenaBattle();
+    expect(battle.battle.ratingDelta).toBe(16);
+    expect(battle.arena.seasonScore).toBe(20);
+    expect((await client.listArenaLeaderboard())[0]?.isChampion).toBe(true);
+    expect((await client.listArenaHistory())[0]?.role).toBe('attack');
+    expect((await client.setArenaBarrier(false)).barrierEnabled).toBe(false);
+    await client.leaveArena();
+
+    expect(requests.some((request) => request.url.endsWith('/players/claim') && request.method === 'POST')).toBe(true);
+    expect(requests.some((request) => request.url.endsWith('/arena/battles/random') && request.method === 'POST')).toBe(true);
+    expect(requests.some((request) => request.url.endsWith('/arena') && request.method === 'DELETE')).toBe(true);
+  });
+
 });

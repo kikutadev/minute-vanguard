@@ -1,6 +1,6 @@
 # Minute Vanguard — Product Specification
 
-Status: Hero60-reference vertical slice (2026-09-12)
+Status: Hero60-reference vertical slice (2026-09-13)
 
 ## Architecture
 
@@ -21,9 +21,11 @@ Other-player information is optional. The game builds a small product-owned publ
 
 Publishing is off by default. Enabling it claims an anonymous `playerId` plus a random 256-bit write token in the browser. D1 stores only the SHA-256 token hash. PUT/DELETE require that bearer token, revisions are monotonic, publishes are rate-limited, and the Worker validates a bounded public payload before storing it. Only display name, level, job, public battle counts, codex count, pet count and equipment summary are uploaded. Full save state, currencies, RNG streams, inventory instance ids and the write token are not public data. Disabling publishing deletes the D1 snapshot and cancels queued client-side auto-publishes.
 
-The Ranking tab exposes recent public profiles plus Level / victories / codex sorts. These are explicitly non-authoritative reference rankings because their source is a local client save. They cannot drive PvP/Champion results or server rewards. Server-authoritative PvP, shared Raid, wanted events and other adversarial/shared progression remain a separate backend boundary.
+The Ranking tab exposes recent public profiles plus Level / victories / codex sorts. These are explicitly non-authoritative reference rankings because their source is a local client save. The separate `Arena` ranking is server-authoritative and reads only the Worker-owned weekly Season Score table.
 
-For local development, the same Cloudflare path is reproduced with Wrangler local D1. `cloudflare/migrations/` owns the public snapshot + anonymous ownership schema, `cloudflare/worker.js` composes `D1PublicPlayerDirectory` with authenticated write routes, and Vite proxies `/api` to the local Worker. GitHub Pages still uploads only `dist/`; Worker/D1 is deployed separately.
+Arena reuses the anonymous ownership token but is a separate explicit opt-in. D1 owns every competitive value: Rating, best Rating, weekly Season Score, attack/defense score, W/L/D, fixed PvP cooldown, defense barrier, daily same-opponent win counts and battle history. The Worker owns opponent selection, combat seed and combat resolution; browser Level, Gold, equipment stats, inventory, RNG and other save values are never accepted as competitive inputs.
+
+For local development, the same Cloudflare path is reproduced with Wrangler local D1. `cloudflare/migrations/` owns public snapshot/ownership tables plus Arena tables, `cloudflare/worker.js` composes those authenticated routes, and Vite proxies `/api` to the local Worker. GitHub Pages still uploads only `dist/`; Worker/D1 is deployed separately.
 
 ## Reference fidelity target
 
@@ -52,6 +54,35 @@ A battle is an immediate authoritative command followed by a cooldown.
 - Rare Guarantee costs 10 Gem and constrains the next encounter to Rare or above
 
 Combat resolves at most 20 turns. Result generation, turn log, rewards, RNG state and cooldown are all Domain state; browser timers only animate already-resolved turns.
+
+## Weekly Arena / Champion
+
+Arena is opt-in online competition and does not reuse local monster-combat authority. The current server slice follows the publicly documented Arena cadence while keeping unpublished formulas product-owned.
+
+- weekly season boundary: Monday 00:00 JST
+- Champion crown: current Season Score rank #1
+- initial Rating: 1,000; lower bound 0
+- matchmaking: a random candidate from nearby-Rating eligible players
+- same opponent: at most three attacker wins per JST day
+- fixed Arena cooldown: 60 seconds, independent of monster battle and unaffected by permanent cooldown upgrades, orb cooldown, Rush or Gem skip
+- both combatants use full Arena HP; local monster-battle HP does not carry over
+- first side is server-random 50/50
+- attacker win Season Score: opponent Rating / 100, clamped to 2–40
+- attacker loss/draw: 1 point
+- defense win: one third of the attack value
+- defense score is capped by attack-earned score, with the published 200-point defense allowance
+- Fri/Sat/Sun Season Score ×2 while Rating change remains ×1
+- a failed defense can enable a two-hour barrier; the owner can disable barrier behavior
+- a 700+ Rating-gap upset does not change either Rating, while Season Score still applies
+- ten public tier thresholds: 0 / 300 / 1,000 / 2,500 / 5,000 / 9,000 / 14,000 / 21,000 / 29,000 / 40,000
+
+The exact live Rating delta formula and weekly partial-reset curve are not public. Minute Vanguard therefore uses an explicit product-owned Elo-like curve (`K=32`) and retains 75% of Rating above 1,000 on weekly reset. These are not claimed as reference values.
+
+Competitive integrity takes priority over importing local progression. The Worker currently accepts only display name and a known job id; the job selects a server-normalized combat style. It does not trust client Level, equipment stats, currencies, pets, titles, permanent growth, or RNG. Combat uses a server-generated seed and `combatVersion`, both stored with the resolved turn log. The 60-second cooldown is conditionally reserved in D1 before resolution so concurrent double-submits produce one battle and one 429 response.
+
+If there is no eligible human opponent, the server selects an original training bot near the player's Rating. Training battles still consume the Arena cooldown but change no official Rating, Season Score or W/L.
+
+Current Arena parity gaps are intentional and visible: the 2026-09-02 reference added free Arena-specific weapon/armor/orb selection; pets also participate in the reference Arena. Minute Vanguard does not yet trust local progression for those systems, so Arena-specific server-owned loadouts/pets are the next Arena layer. Random-match Gold transfer, named challenges, season reward delivery and hall-of-fame persistence are also not implemented yet.
 
 ## Stats and growth
 
@@ -201,11 +232,13 @@ Schema upgrades normalize incompatible public-prototype saves into the current p
 
 ## Online-only boundary
 
-The independent Pages build remains local-first, but opt-in public profiles and non-authoritative reference leaderboards are now live through Cloudflare Worker + D1. PvP/Champion, shared Raid, shared wanted events, chat, account/payment and server rewards still require server-authoritative state and are not faked by trusting the public-profile table.
+The independent Pages build remains local-first. Opt-in public profiles and their reference rankings are live through Cloudflare Worker + D1, and weekly Arena/Champion now has its own server-authoritative state and normalized combat path. Public-profile values never feed Arena authority.
+
+Still online-only and not implemented: Arena-specific server loadouts/pets, random-match Gold transfer, named Arena challenges, season reward delivery/hall of fame, shared Raid, shared wanted events, chat, account/payment and other server rewards.
 
 ## Deployment
 
-Vite builds relative assets into `dist/`. GitHub Actions runs verification/build and uploads only `dist/` to GitHub Pages. Source files and vendored development files are never part of the Pages artifact.
+Vite builds relative assets into `dist/`. `pnpm deploy:pages` runs local verification/build and force-publishes only `dist/` to the artifact-only `gh-pages` branch. Source files and vendored development files are never part of the Pages artifact. Worker/D1 deploys separately through Wrangler.
 
 ## Gold bags
 

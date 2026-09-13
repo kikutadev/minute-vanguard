@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit';
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
+import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -485,13 +486,15 @@ function formatCompactGold(value: number): string {
 
 function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMimic: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
+  const [battleMode, setBattleMode] = useState<'monster' | 'arena'>('monster');
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
   const freeSkips = freeCooldownSkipsRemaining(state);
   const last = state.gameData.lastBattle;
   const scene = battleSceneProps(state.gameData.selectedMonsterLevel);
   return <section className="battle-page page-section">
-    <div className="section-tabs"><button className="active">⚔ モンスター戦</button><button disabled>🏆 チャンプ戦</button></div>
+    <div className="section-tabs"><button className={battleMode === 'monster' ? 'active' : ''} onClick={() => setBattleMode('monster')}>⚔ モンスター戦</button><button className={battleMode === 'arena' ? 'active' : ''} onClick={() => setBattleMode('arena')}>🏆 アリーナ</button></div>
+    {battleMode === 'arena' ? <ArenaView state={state} /> : <>
     <div className="battle-control-card">
       <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><button className="simple-battle-open" onClick={props.onSimpleBattle}>簡易</button><span className="online-dot">● 1人プレイ</span></div>
       <div className={`battle-illustration ${scene.className}`} data-scene={scene.label}>
@@ -533,7 +536,167 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
       <button onClick={props.onMimic}><span>🎭</span><small>ミミック銀行</small>{state.gameData.mimicBankGold > 0 && <em>{formatCompactGold(state.gameData.mimicBankGold)}</em>}</button>
     </div>
     <BattleHistory state={state} />
+    </>}
   </section>;
+}
+
+function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
+  const [arena, setArena] = useState<ArenaPlayerView | null>(null);
+  const [leaderboard, setLeaderboard] = useState<readonly ArenaLeaderboardEntry[]>([]);
+  const [history, setHistory] = useState<readonly ArenaHistoryEntry[]>([]);
+  const [battle, setBattle] = useState<ArenaBattleResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = async () => {
+    const online = getMinuteVanguardOnlineClient();
+    const [me, board] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10)]);
+    setArena(me);
+    setLeaderboard(board);
+    setHistory(me === null ? [] : await online.listArenaHistory());
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const online = getMinuteVanguardOnlineClient();
+        const [me, board] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10)]);
+        if (cancelled) return;
+        setArena(me);
+        setLeaderboard(board);
+        if (me !== null) setHistory(await online.listArenaHistory());
+      } catch {
+        if (!cancelled) setError('アリーナサーバーへ接続できません');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const join = async () => {
+    setBusy(true); setError(null);
+    try {
+      const online = getMinuteVanguardOnlineClient();
+      setArena(await online.joinArena(state));
+      setLeaderboard(await online.listArenaLeaderboard(10));
+      setHistory(await online.listArenaHistory());
+    } catch { setError('アリーナ参加に失敗しました'); }
+    finally { setBusy(false); setLoading(false); }
+  };
+
+  const fightArena = async () => {
+    setBusy(true); setError(null);
+    try {
+      const result = await getMinuteVanguardOnlineClient().randomArenaBattle();
+      setArena(result.arena);
+      setBattle(result.battle);
+      const online = getMinuteVanguardOnlineClient();
+      const [board, nextHistory] = await Promise.all([online.listArenaLeaderboard(10), online.listArenaHistory()]);
+      setLeaderboard(board); setHistory(nextHistory);
+    } catch (caught) {
+      const code = caught instanceof Error && 'code' in caught ? String((caught as { code?: unknown }).code) : '';
+      setError(code === 'arena-cooldown' ? 'まだアリーナの待ち時間です' : '対戦を開始できませんでした');
+      try { await reload(); } catch { /* keep the actionable error */ }
+    } finally { setBusy(false); }
+  };
+
+  const toggleBarrier = async () => {
+    if (arena === null) return;
+    setBusy(true); setError(null);
+    try { setArena(await getMinuteVanguardOnlineClient().setArenaBarrier(!arena.barrierEnabled)); }
+    catch { setError('防衛バリア設定を変更できませんでした'); }
+    finally { setBusy(false); }
+  };
+
+  const leave = async () => {
+    if (!window.confirm('アリーナ戦績・レート・シーズンスコアを削除して退会しますか？')) return;
+    setBusy(true); setError(null);
+    try {
+      await getMinuteVanguardOnlineClient().leaveArena();
+      setArena(null); setHistory([]); setBattle(null);
+      setLeaderboard(await getMinuteVanguardOnlineClient().listArenaLeaderboard(10));
+    } catch { setError('アリーナ退会に失敗しました'); }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return <div className="arena-loading">アリーナ情報を読み込んでいます…</div>;
+  if (arena === null) return <div className="arena-join-card">
+    <span className="arena-crown">♛</span>
+    <h2>WEEKLY ARENA</h2>
+    <p>週ごとのシーズンスコアで王冠を争います。対戦・レート・待ち時間はサーバーが決定します。</p>
+    <div className="arena-security-note"><strong>公平性</strong><span>ローカルのLv・Gold・装備数値は勝敗に使いません。現在職業だけを戦闘スタイルとして使い、全員をArena基準へ正規化します。</span></div>
+    {error && <p className="arena-error">{error}</p>}
+    <button className="arena-join-button" disabled={busy} onClick={() => void join()}>{busy ? '登録中…' : 'アリーナに参加する'}</button>
+    <small>参加すると、名前・職業・Arena戦績・レートがArena内で公開されます。通常の公開プロフィール設定とは別です。</small>
+  </div>;
+
+  const cooldownSec = Math.min(60, Math.max(0, Math.ceil((arena.nextAttackAtMs - state.lastWallClockMs) / 1_000)));
+  const barrierSec = Math.max(0, Math.ceil((arena.barrierUntilMs - state.lastWallClockMs) / 1_000));
+  const champion = leaderboard.find((entry) => entry.isChampion);
+  const nextTierRemaining = arena.nextTierScore === null ? null : Math.max(0, arena.nextTierScore - arena.seasonScore);
+  return <div className="arena-view">
+    <div className="arena-season-card">
+      <div className="arena-season-head"><span>SEASON {arena.seasonKey}</span><b>#{arena.rank ?? '—'} {arena.tierName}</b></div>
+      <div className="arena-score-grid">
+        <div><small>SEASON SCORE</small><strong>{arena.seasonScore.toLocaleString()}</strong>{nextTierRemaining !== null && <em>次 {arena.nextTierName} まで {nextTierRemaining}</em>}</div>
+        <div><small>RATE</small><strong>{arena.rating.toLocaleString()}</strong><em>BEST {arena.bestRating.toLocaleString()}</em></div>
+        <div><small>RECORD</small><strong>{arena.wins}勝 {arena.losses}敗</strong><em>引分 {arena.draws}</em></div>
+      </div>
+      <div className="arena-score-split"><span>攻撃 {arena.seasonAttackScore}</span><span>防衛 {arena.seasonDefenseScore}</span><span>{jobDisplayName(arena.jobId)}型</span></div>
+    </div>
+
+    {champion && <div className="arena-champion"><span>♛ CHAMPION</span><strong>{champion.displayName}</strong><em>{champion.seasonScore.toLocaleString()} pt · Rate {champion.rating}</em></div>}
+
+    <div className="arena-fight-card">
+      <div className="arena-versus-art"><span>🧑‍🚀</span><b>VS</b><span>❔</span></div>
+      <p>レート近傍からサーバーが相手を選出。人間の対戦相手がいない場合は、順位変動なしの訓練相手になります。</p>
+      <button className="arena-fight-button" disabled={busy || cooldownSec > 0} onClick={() => void fightArena()}>
+        {busy ? 'MATCHING…' : cooldownSec > 0 ? `${cooldownSec}秒` : '⚔ ランダムマッチ'}
+      </button>
+      <small>固定60秒 · モンスター戦とは別枠 · Gem/Rushで短縮不可</small>
+    </div>
+
+    <div className="arena-defense-card">
+      <div><strong>防衛バリア</strong><small>{barrierSec > 0 ? `残り ${formatRemainingTime(barrierSec)}` : arena.barrierEnabled ? '防衛失敗時に2時間ON' : '使用しない'}</small></div>
+      <button className={arena.barrierEnabled ? 'on' : ''} disabled={busy} onClick={() => void toggleBarrier()}>{arena.barrierEnabled ? 'ON' : 'OFF'}</button>
+    </div>
+
+    {error && <p className="arena-error">{error}</p>}
+
+    <h3 className="arena-heading">今シーズン上位</h3>
+    <div className="arena-board">{leaderboard.length === 0 ? <p>まだ順位はありません。</p> : leaderboard.map((entry) => <div key={entry.playerId} className={entry.playerId === arena.playerId ? 'you' : ''}>
+      <b>{entry.isChampion ? '♛' : entry.rank}</b><span>{entry.displayName}<small>{jobDisplayName(entry.jobId)} · Rate {entry.rating}</small></span><strong>{entry.seasonScore.toLocaleString()}</strong>
+    </div>)}</div>
+
+    <h3 className="arena-heading">直近のArenaログ</h3>
+    <div className="arena-history">{history.length === 0 ? <p>対戦するとここに履歴が残ります。</p> : history.map((entry) => <div key={entry.battleId} className={entry.outcome}>
+      <span>{entry.role === 'attack' ? '攻' : '守'}</span><strong>{entry.opponentName}<small>{jobDisplayName(entry.opponentJobId)}</small></strong><b>{entry.outcome === 'win' ? '勝' : entry.outcome === 'loss' ? '敗' : '分'}</b><em>{entry.ratingDelta >= 0 ? '+' : ''}{entry.ratingDelta}R / +{entry.scoreGain}pt</em>
+    </div>)}</div>
+
+    <button className="arena-leave" disabled={busy} onClick={() => void leave()}>アリーナ登録を削除</button>
+    {battle !== null && <ArenaBattleModal result={battle} onClose={() => setBattle(null)} />}
+  </div>;
+}
+
+function ArenaBattleModal({ result, onClose }: Readonly<{ result: ArenaBattleResult; onClose: () => void }>) {
+  const logs = result.turns.flatMap((turn) => turn.logs.map((line, index) => ({ key: `${turn.turn}:${index}`, turn: turn.turn, line })));
+  return <div className="modal-backdrop battle-modal-backdrop"><section className="battle-result-modal arena-result-modal">
+    <div className="arena-result-stage">
+      <div><span>🧑‍🚀</span><strong>YOU</strong><em>{result.attackerHpAfter}/{result.attackerMaxHp} HP</em></div>
+      <b>VS</b>
+      <div><span>{result.opponent.isBot ? '🤖' : '🧑‍🚀'}</span><strong>{result.opponent.displayName}</strong><em>{result.defenderHpAfter}/{result.defenderMaxHp} HP</em></div>
+    </div>
+    <div className="turn-log arena-turn-log"><div className="turn-log-title">SERVER BATTLE LOG <span>v{result.combatVersion}</span></div>{logs.slice(-12).map((log) => <p key={log.key}><b>T{log.turn}</b>{log.line}</p>)}</div>
+    <div className={`battle-reward-panel ${result.outcome === 'win' ? 'victory' : result.outcome === 'loss' ? 'defeat' : 'draw'}`}>
+      <h2>{result.outcome === 'win' ? 'ARENA WIN' : result.outcome === 'loss' ? 'ARENA LOSS' : 'ARENA DRAW'}</h2>
+      {result.opponent.isBot ? <p className="arena-training-note">訓練相手のためRate・Season Scoreは変動しません</p> : <div className="reward-row"><span>RATE {result.ratingDelta >= 0 ? '+' : ''}{result.ratingDelta}</span><span>SEASON +{result.seasonScoreGain}</span><span>{result.weekendMultiplier === 2 ? 'WEEKEND ×2' : 'WEEKDAY'}</span></div>}
+      <p>{result.opponent.isBot ? 'TRAINING' : `Rate ${result.ratingBefore} → ${result.ratingAfter}`} · Score {result.seasonScoreAfter}</p>
+      <button className="modal-primary" onClick={onClose}>閉じる</button>
+    </div>
+  </section></div>;
 }
 
 function SimpleBattleView(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onDeposit: () => void; onClose: () => void }>) {
@@ -763,10 +926,11 @@ function CollectionView(props: Readonly<{ state: MinuteVanguardState; onAchievem
 }
 
 function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVanguardState; onPublishingChanged: (enabled: boolean) => void }>) {
-  type RankingTab = 'recent' | PublicLeaderboardMetric;
+  type RankingTab = 'recent' | PublicLeaderboardMetric | 'arena';
   const [rankingTab, setRankingTab] = useState<RankingTab>('recent');
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remotePlayers, setRemotePlayers] = useState<readonly PublicPlayerSnapshot<MinuteVanguardPublicData>[]>([]);
+  const [arenaEntries, setArenaEntries] = useState<readonly ArenaLeaderboardEntry[]>([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [publishingEnabled, setPublishingEnabled] = useState(() => getMinuteVanguardOnlineClient().isPublishingEnabled());
   const [publishBusy, setPublishBusy] = useState(false);
@@ -775,13 +939,30 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
 
   useEffect(() => {
     let cancelled = false;
+    const online = getMinuteVanguardOnlineClient();
+    if (rankingTab === 'arena') {
+      void online.listArenaLeaderboard(20)
+        .then((entries) => {
+          if (cancelled) return;
+          setArenaEntries(entries);
+          setRemotePlayers([]);
+          setRemoteStatus('ready');
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setArenaEntries([]);
+          setRemoteStatus('error');
+        });
+      return () => { cancelled = true; };
+    }
     const request = rankingTab === 'recent'
       ? publicPlayerDirectory.listPublicPlayers({ gameId: MINUTE_VANGUARD_GAME_ID, limit: 20 }).then((page) => page.players)
-      : getMinuteVanguardOnlineClient().listLeaderboard(rankingTab, 20);
+      : online.listLeaderboard(rankingTab, 20);
     void request
       .then((players) => {
         if (cancelled) return;
         setRemotePlayers(players);
+        setArenaEntries([]);
         setRemoteStatus('ready');
       })
       .catch(() => {
@@ -830,46 +1011,57 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
 
   return <section className="page-section ranking-page">
     <h1>ランキング</h1>
-    <div className="subtabs">
+    <div className="subtabs ranking-tabs">
       <button className={rankingTab === 'recent' ? 'active' : ''} onClick={() => selectRankingTab('recent')}>最近</button>
-      <button className={rankingTab === 'level' ? 'active' : ''} onClick={() => selectRankingTab('level')}>レベル</button>
-      <button className={rankingTab === 'victories' ? 'active' : ''} onClick={() => selectRankingTab('victories')}>討伐数</button>
+      <button className={rankingTab === 'level' ? 'active' : ''} onClick={() => selectRankingTab('level')}>Lv</button>
+      <button className={rankingTab === 'victories' ? 'active' : ''} onClick={() => selectRankingTab('victories')}>討伐</button>
       <button className={rankingTab === 'codex' ? 'active' : ''} onClick={() => selectRankingTab('codex')}>図鑑</button>
+      <button className={rankingTab === 'arena' ? 'active' : ''} onClick={() => selectRankingTab('arena')}>Arena</button>
     </div>
 
-    <div className="self-public-card">
-      <span>あなた</span><strong>{state.gameData.player.name}</strong><em>Lv.{own.level} · {jobDisplayName(own.jobId)}</em>
-      <small>{own.victories.toLocaleString()}勝 / 図鑑 {own.discoveredEnemyCount}/{enemies.length} / ペット {own.ownedPetCount}</small>
-      <button className={publishingEnabled ? 'publishing' : ''} disabled={publishBusy} onClick={() => void togglePublishing()}>
-        {publishBusy ? '同期中…' : publishingEnabled ? '公開中 · 停止する' : '公開プロフィールを有効にする'}
-      </button>
-    </div>
-
-    <p className="ranking-authority-note">公開は任意です。送信するのは表示名・Lv・戦績・図鑑数・装備要約だけで、セーブデータは送信しません。順位は公開プロフィールの参考値で、PvPの競技authorityではありません。</p>
-    {remoteStatus === 'loading' && <p className="offline-label">公開冒険者を読み込んでいます…</p>}
-    {remoteStatus === 'error' && <p className="offline-label error">オンライン一覧を取得できません。ソロプレイはそのまま続けられます。</p>}
-    {remoteStatus === 'ready' && remotePlayers.length === 0 && <p className="empty-state">公開中の冒険者はまだいません。</p>}
-
-    <div className="ranking-list">{remotePlayers.map((player, index) => <button
-      className={`rank-row public-player-row ${selectedPlayerId === player.playerId ? 'selected' : ''}`}
-      key={player.playerId}
-      onClick={() => setSelectedPlayerId((current) => current === player.playerId ? null : player.playerId)}
-    >
-      <b>{rankLabel(index)}</b><span>🧑‍🚀</span><strong>{player.displayName}<small>{jobDisplayName(player.data.jobId)} · {player.data.victories.toLocaleString()}勝</small></strong><em>{rankingTab === 'codex' ? `${player.data.discoveredEnemyCount}/${enemies.length}` : rankingTab === 'victories' ? `${player.data.victories.toLocaleString()}勝` : `Lv.${player.data.level}`}</em>
-    </button>)}</div>
-
-    {selected !== undefined && <div className="public-player-detail">
-      <header><span>公開プロフィール</span><strong>{selected.displayName}</strong><em>Lv.{selected.data.level}</em></header>
-      <div className="public-player-stats">
-        <div><span>職業</span><strong>{jobDisplayName(selected.data.jobId)}</strong></div>
-        <div><span>転職</span><strong>{selected.data.totalJobChanges}回</strong></div>
-        <div><span>勝利</span><strong>{selected.data.victories.toLocaleString()}</strong></div>
-        <div><span>戦闘</span><strong>{selected.data.totalBattles.toLocaleString()}</strong></div>
-        <div><span>図鑑</span><strong>{selected.data.discoveredEnemyCount}/{enemies.length}</strong></div>
-        <div><span>ペット</span><strong>{selected.data.ownedPetCount}</strong></div>
+    {rankingTab === 'arena' ? <>
+      <p className="ranking-authority-note arena-authority-note"><strong>SERVER AUTHORITY</strong> Arena順位はWorker/D1が保持するシーズンスコアで決まります。ローカルsaveのLv・装備・Goldは競技順位や勝敗に使いません。</p>
+      {remoteStatus === 'loading' && <p className="offline-label">Arena順位を読み込んでいます…</p>}
+      {remoteStatus === 'error' && <p className="offline-label error">Arena順位を取得できません。ソロプレイには影響しません。</p>}
+      {remoteStatus === 'ready' && arenaEntries.length === 0 && <p className="empty-state">今シーズンのArena参加者はまだいません。</p>}
+      <div className="ranking-list arena-ranking-list">{arenaEntries.map((entry) => <div className="rank-row arena-rank-row" key={entry.playerId}>
+        <b>{entry.isChampion ? '♛' : entry.rank}</b><span>🧑‍🚀</span><strong>{entry.displayName}<small>{jobDisplayName(entry.jobId)} · Rate {entry.rating.toLocaleString()}</small></strong><em>{entry.seasonScore.toLocaleString()} pt</em>
+      </div>)}</div>
+    </> : <>
+      <div className="self-public-card">
+        <span>あなた</span><strong>{state.gameData.player.name}</strong><em>Lv.{own.level} · {jobDisplayName(own.jobId)}</em>
+        <small>{own.victories.toLocaleString()}勝 / 図鑑 {own.discoveredEnemyCount}/{enemies.length} / ペット {own.ownedPetCount}</small>
+        <button className={publishingEnabled ? 'publishing' : ''} disabled={publishBusy} onClick={() => void togglePublishing()}>
+          {publishBusy ? '同期中…' : publishingEnabled ? '公開中 · 停止する' : '公開プロフィールを有効にする'}
+        </button>
       </div>
-      <div className="public-loadout"><span>⚔ {selected.data.equippedWeaponName ?? '装備なし'}</span><span>🛡 {selected.data.equippedArmorName ?? '装備なし'}</span><span>🔮 {selected.data.equippedOrbRank === null ? 'オーブなし' : `${selected.data.equippedOrbRank}オーブ`}</span></div>
-    </div>}
+
+      <p className="ranking-authority-note">公開は任意です。送信するのは表示名・Lv・戦績・図鑑数・装備要約だけで、セーブデータは送信しません。ここは公開プロフィール由来の参考順位で、Arenaの競技authorityではありません。</p>
+      {remoteStatus === 'loading' && <p className="offline-label">公開冒険者を読み込んでいます…</p>}
+      {remoteStatus === 'error' && <p className="offline-label error">オンライン一覧を取得できません。ソロプレイはそのまま続けられます。</p>}
+      {remoteStatus === 'ready' && remotePlayers.length === 0 && <p className="empty-state">公開中の冒険者はまだいません。</p>}
+
+      <div className="ranking-list">{remotePlayers.map((player, index) => <button
+        className={`rank-row public-player-row ${selectedPlayerId === player.playerId ? 'selected' : ''}`}
+        key={player.playerId}
+        onClick={() => setSelectedPlayerId((current) => current === player.playerId ? null : player.playerId)}
+      >
+        <b>{rankLabel(index)}</b><span>🧑‍🚀</span><strong>{player.displayName}<small>{jobDisplayName(player.data.jobId)} · {player.data.victories.toLocaleString()}勝</small></strong><em>{rankingTab === 'codex' ? `${player.data.discoveredEnemyCount}/${enemies.length}` : rankingTab === 'victories' ? `${player.data.victories.toLocaleString()}勝` : `Lv.${player.data.level}`}</em>
+      </button>)}</div>
+
+      {selected !== undefined && <div className="public-player-detail">
+        <header><span>公開プロフィール</span><strong>{selected.displayName}</strong><em>Lv.{selected.data.level}</em></header>
+        <div className="public-player-stats">
+          <div><span>職業</span><strong>{jobDisplayName(selected.data.jobId)}</strong></div>
+          <div><span>転職</span><strong>{selected.data.totalJobChanges}回</strong></div>
+          <div><span>勝利</span><strong>{selected.data.victories.toLocaleString()}</strong></div>
+          <div><span>戦闘</span><strong>{selected.data.totalBattles.toLocaleString()}</strong></div>
+          <div><span>図鑑</span><strong>{selected.data.discoveredEnemyCount}/{enemies.length}</strong></div>
+          <div><span>ペット</span><strong>{selected.data.ownedPetCount}</strong></div>
+        </div>
+        <div className="public-loadout"><span>⚔ {selected.data.equippedWeaponName ?? '装備なし'}</span><span>🛡 {selected.data.equippedArmorName ?? '装備なし'}</span><span>🔮 {selected.data.equippedOrbRank === null ? 'オーブなし' : `${selected.data.equippedOrbRank}オーブ`}</span></div>
+      </div>}
+    </>}
   </section>;
 }
 

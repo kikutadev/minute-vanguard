@@ -23,7 +23,7 @@
     "online:migrate:local": "wrangler d1 migrations apply minute-vanguard-online --local --config cloudflare/wrangler.jsonc",
     "online:migrate:remote": "wrangler d1 migrations apply minute-vanguard-online --remote --config cloudflare/wrangler.jsonc",
     "online:deploy": "wrangler deploy --config cloudflare/wrangler.jsonc",
-    "online:check": "node --check cloudflare/worker.js"
+    "online:check": "node --check cloudflare/worker.js && wrangler deploy --dry-run --config cloudflare/wrangler.jsonc"
   },
   "dependencies": {
     "idle-game-kit": "file:./vendor/idle-game-kit",

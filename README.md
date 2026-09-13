@@ -38,7 +38,8 @@ Implemented in the current build:
 - IndexedDB save and wall-clock cooldown progression
 - same-core headless simulator
 - local `pnpm deploy:pages` publishing that pushes only built `dist/` contents to the `gh-pages` branch; no GitHub Actions required
-- opt-in Cloudflare Worker + D1 public profiles and reference leaderboards, with a local Wrangler/D1 QA harness
+- opt-in Cloudflare Worker + D1 public profiles and non-authoritative reference leaderboards
+- server-authoritative weekly Arena: normalized server combat, Rating, Season Score, Champion crown, fixed PvP cooldown, defense barrier and battle history
 
 ## Kit boundary
 
@@ -58,9 +59,13 @@ The repository vendors the built Kit package under `vendor/idle-game-kit` becaus
 
 ## Online boundary
 
-Public-player discovery now has a production Cloudflare Worker + D1 service at `minute-vanguard-online.kikutadev.workers.dev`. Publishing is explicit opt-in: the browser claims an anonymous player id plus a write token, the Worker stores only the token hash, and only the product-owned public projection is uploaded. The Ranking tab can browse recent profiles or sort the same public projection by Level / victories / codex completion.
+The production Cloudflare Worker + D1 service at `minute-vanguard-online.kikutadev.workers.dev` now owns two deliberately separate online surfaces.
 
-These rankings are intentionally labelled reference rankings, not competitive authority. The submitted values come from each player's local save and therefore must never decide PvP/Champion, raid rewards, shared events, or other adversarial/server-reward outcomes. Those systems still require server-authoritative simulation and validation. API failure never blocks solo play.
+Public-profile publishing is explicit opt-in. The browser claims an anonymous player id plus a write token, the Worker stores only the token hash, and only the product-owned public projection is uploaded. Recent / Level / victories / codex lists are still reference/discovery rankings because those values come from a local save.
+
+Arena is a second opt-in boundary and is competitive authority. D1 owns Rating, best Rating, weekly Season Score, attack/defense score, record, fixed 60-second Arena cooldown, defense barrier, daily opponent-win counters and battle history. The Worker selects the opponent, creates the random seed and resolves normalized 20-turn combat. Local Level, Gold, equipment stats, RNG and raw save data are not accepted as combat inputs. The current job id is only a normalized Arena combat style. If no human opponent is available, a server-owned training bot is used and the battle changes no official Rating, Season Score or W/L.
+
+The current Arena slice intentionally stops before features that would require additional server-owned economy/progression: Arena-specific free weapon/armor/orb loadouts, Arena pets, random-match Gold transfer, named challenges, season reward delivery and hall-of-fame history. Shared Raid / wanted events, chat and payments are also separate future authority boundaries. API failure never blocks solo play.
 
 ## Development
 

@@ -1,4 +1,5 @@
 import type { PublicPlayerSnapshot } from 'idle-game-kit';
+import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
 import type { MinuteVanguardState } from '../definitions/types';
 import {
   createMinuteVanguardPublicSnapshot,
@@ -130,6 +131,89 @@ export class MinuteVanguardOnlineClient {
     return payload.players.map((value) => parseSnapshot(value));
   }
 
+
+  async getArena(): Promise<ArenaPlayerView | null> {
+    const identity = this.#readIdentity();
+    if (identity === null) return null;
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena`), {
+      headers: { authorization: `Bearer ${identity.writeToken}`, accept: 'application/json' },
+    });
+    const payload = await readJson(response);
+    if (response.status === 404 && isRecord(payload) && payload.error === 'arena-not-joined') return null;
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    return parseArenaEnvelope(payload);
+  }
+
+  async joinArena(state: MinuteVanguardState): Promise<ArenaPlayerView> {
+    const identity = await this.#ensureIdentity();
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${identity.writeToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ displayName: state.gameData.player.name, jobId: state.gameData.player.jobId }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    return parseArenaEnvelope(payload);
+  }
+
+  async leaveArena(): Promise<void> {
+    const identity = this.#readIdentity();
+    if (identity === null) return;
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena`), {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${identity.writeToken}` },
+    });
+    if (!response.ok) throw await responseError(response);
+  }
+
+  async setArenaBarrier(enabled: boolean): Promise<ArenaPlayerView> {
+    const identity = this.#readIdentity();
+    if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/barrier`), {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${identity.writeToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    return parseArenaEnvelope(payload);
+  }
+
+  async randomArenaBattle(): Promise<Readonly<{ arena: ArenaPlayerView; battle: ArenaBattleResult }>> {
+    const identity = this.#readIdentity();
+    if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/battles/random`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${identity.writeToken}`, accept: 'application/json' },
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !('arena' in payload) || !('battle' in payload)) throw new PublicProfileOnlineError(502, 'invalid-arena-battle-envelope', payload);
+    return { arena: parseArenaPlayer(payload.arena), battle: parseArenaBattle(payload.battle) };
+  }
+
+  async listArenaLeaderboard(limit = 10): Promise<readonly ArenaLeaderboardEntry[]> {
+    const url = new URL(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/leaderboard`));
+    url.searchParams.set('limit', String(limit));
+    const response = await this.#fetcher(url.toString(), { headers: { accept: 'application/json' } });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !Array.isArray(payload.entries)) throw new PublicProfileOnlineError(502, 'invalid-arena-leaderboard-envelope', payload);
+    return payload.entries.map(parseArenaLeaderboardEntry);
+  }
+
+  async listArenaHistory(): Promise<readonly ArenaHistoryEntry[]> {
+    const identity = this.#readIdentity();
+    if (identity === null) return [];
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/history`), {
+      headers: { authorization: `Bearer ${identity.writeToken}`, accept: 'application/json' },
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !Array.isArray(payload.entries)) throw new PublicProfileOnlineError(502, 'invalid-arena-history-envelope', payload);
+    return payload.entries.map(parseArenaHistoryEntry);
+  }
+
   #url(path: string): string {
     return `${this.#apiBaseUrl}${path}`;
   }
@@ -207,6 +291,45 @@ function parseSnapshot(value: unknown): PublicPlayerSnapshot<MinuteVanguardPubli
     throw new PublicProfileOnlineError(502, 'invalid-player-snapshot', value);
   }
   return value as unknown as PublicPlayerSnapshot<MinuteVanguardPublicData>;
+}
+
+
+function parseArenaEnvelope(payload: unknown): ArenaPlayerView {
+  if (!isRecord(payload) || !('arena' in payload)) throw new PublicProfileOnlineError(502, 'invalid-arena-envelope', payload);
+  return parseArenaPlayer(payload.arena);
+}
+
+function parseArenaPlayer(value: unknown): ArenaPlayerView {
+  if (!isRecord(value) || typeof value.playerId !== 'string' || typeof value.displayName !== 'string' || typeof value.jobId !== 'string'
+    || !Number.isFinite(value.rating) || !Number.isFinite(value.bestRating) || typeof value.seasonKey !== 'string'
+    || !Number.isFinite(value.seasonScore) || !Number.isFinite(value.nextAttackAtMs) || typeof value.barrierEnabled !== 'boolean') {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-player', value);
+  }
+  return value as unknown as ArenaPlayerView;
+}
+
+function parseArenaBattle(value: unknown): ArenaBattleResult {
+  if (!isRecord(value) || typeof value.battleId !== 'string' || !Number.isFinite(value.resolvedAtMs) || typeof value.outcome !== 'string'
+    || !Array.isArray(value.turns) || !isRecord(value.opponent) || !Number.isFinite(value.ratingAfter) || !Number.isFinite(value.seasonScoreAfter)) {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-battle', value);
+  }
+  return value as unknown as ArenaBattleResult;
+}
+
+function parseArenaLeaderboardEntry(value: unknown): ArenaLeaderboardEntry {
+  if (!isRecord(value) || !Number.isFinite(value.rank) || typeof value.playerId !== 'string' || typeof value.displayName !== 'string'
+    || typeof value.jobId !== 'string' || !Number.isFinite(value.rating) || !Number.isFinite(value.seasonScore) || typeof value.isChampion !== 'boolean') {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-leaderboard-entry', value);
+  }
+  return value as unknown as ArenaLeaderboardEntry;
+}
+
+function parseArenaHistoryEntry(value: unknown): ArenaHistoryEntry {
+  if (!isRecord(value) || typeof value.battleId !== 'string' || !Number.isFinite(value.resolvedAtMs) || typeof value.role !== 'string'
+    || typeof value.opponentName !== 'string' || typeof value.opponentJobId !== 'string' || typeof value.outcome !== 'string') {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-history-entry', value);
+  }
+  return value as unknown as ArenaHistoryEntry;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
