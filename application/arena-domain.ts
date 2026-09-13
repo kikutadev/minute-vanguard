@@ -1,4 +1,4 @@
-export const ARENA_COMBAT_VERSION = 1;
+export const ARENA_COMBAT_VERSION = 2;
 export const ARENA_COOLDOWN_MS = 60_000;
 export const ARENA_DEFENSE_BARRIER_MS = 2 * 60 * 60 * 1_000;
 export const ARENA_MAX_TURNS = 20;
@@ -16,6 +16,47 @@ export type ArenaJobId =
   | 'job.wraith'
   | 'job.tamer'
   | 'job.hexer';
+
+export type ArenaWeaponId = 'arena.weapon.vanguard-blade' | 'arena.weapon.arc-focus' | 'arena.weapon.lucky-knife';
+export type ArenaArmorId = 'arena.armor.guard-plate' | 'arena.armor.ward-robe' | 'arena.armor.scout-coat';
+export type ArenaOrbId = 'arena.orb.balance' | 'arena.orb.edge' | 'arena.orb.shelter';
+export type ArenaLoadout = Readonly<{ weaponId: ArenaWeaponId; armorId: ArenaArmorId; orbId: ArenaOrbId }>;
+export type ArenaGearSlot = 'weapon' | 'armor' | 'orb';
+export type ArenaGearDefinition = Readonly<{
+  id: ArenaWeaponId | ArenaArmorId | ArenaOrbId;
+  slot: ArenaGearSlot;
+  displayName: string;
+  description: string;
+  icon: string;
+}>;
+
+export const ARENA_DEFAULT_LOADOUT: ArenaLoadout = Object.freeze({
+  weaponId: 'arena.weapon.vanguard-blade',
+  armorId: 'arena.armor.guard-plate',
+  orbId: 'arena.orb.balance',
+});
+
+export const ARENA_GEAR: readonly ArenaGearDefinition[] = Object.freeze([
+  { id: 'arena.weapon.vanguard-blade', slot: 'weapon', displayName: '先陣の剣', description: 'ATK重視。物理職の正面火力を伸ばす。', icon: '⚔️' },
+  { id: 'arena.weapon.arc-focus', slot: 'weapon', displayName: '方陣の杖', description: 'MAT重視。テイマーはこの武器で魔法型になる。', icon: '🪄' },
+  { id: 'arena.weapon.lucky-knife', slot: 'weapon', displayName: '読み合いの短剣', description: 'ATKとLUKを両立し、会心と回避を狙う。', icon: '🗡️' },
+  { id: 'arena.armor.guard-plate', slot: 'armor', displayName: '守勢の胸甲', description: 'HPとDEFを厚くする物理受け。', icon: '🛡️' },
+  { id: 'arena.armor.ward-robe', slot: 'armor', displayName: '結界の外套', description: 'HPとMDFを厚くする魔法受け。', icon: '🥋' },
+  { id: 'arena.armor.scout-coat', slot: 'armor', displayName: '斥候のコート', description: '両防御とLUKを少しずつ伸ばす。', icon: '🧥' },
+  { id: 'arena.orb.balance', slot: 'orb', displayName: '均衡のオーブ', description: 'HP・攻撃・防御を広く補う。', icon: '🔮' },
+  { id: 'arena.orb.edge', slot: 'orb', displayName: '鋭気のオーブ', description: 'ATK・MAT・LUKを伸ばす攻撃型。', icon: '🔴' },
+  { id: 'arena.orb.shelter', slot: 'orb', displayName: '庇護のオーブ', description: 'HP・DEF・MDFを伸ばす耐久型。', icon: '🔵' },
+]);
+
+export function isArenaLoadout(value: unknown): value is ArenaLoadout {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return isArenaGearId(record.weaponId, 'weapon') && isArenaGearId(record.armorId, 'armor') && isArenaGearId(record.orbId, 'orb');
+}
+
+export function arenaGearBySlot(slot: ArenaGearSlot): readonly ArenaGearDefinition[] {
+  return ARENA_GEAR.filter((gear) => gear.slot === slot);
+}
 
 export type ArenaBattleOutcome = 'win' | 'loss' | 'draw';
 export type ArenaBattleSide = 'attacker' | 'defender';
@@ -80,6 +121,41 @@ const NORMALIZED_JOB_STATS: Readonly<Record<ArenaJobId, ArenaCombatStats>> = Obj
   'job.tamer': { hp: 120, attack: 21, defense: 14, magicAttack: 18, magicDefense: 14, luck: 14 },
   'job.hexer': { hp: 108, attack: 10, defense: 10, magicAttack: 27, magicDefense: 18, luck: 17 },
 });
+
+const ARENA_GEAR_STATS: Readonly<Record<ArenaGearDefinition['id'], Partial<ArenaCombatStats>>> = Object.freeze({
+  'arena.weapon.vanguard-blade': { attack: 8 },
+  'arena.weapon.arc-focus': { magicAttack: 10 },
+  'arena.weapon.lucky-knife': { attack: 4, luck: 7 },
+  'arena.armor.guard-plate': { hp: 22, defense: 7 },
+  'arena.armor.ward-robe': { hp: 14, magicDefense: 8 },
+  'arena.armor.scout-coat': { hp: 12, defense: 3, magicDefense: 3, luck: 5 },
+  'arena.orb.balance': { hp: 10, attack: 3, defense: 2, magicAttack: 3, magicDefense: 2 },
+  'arena.orb.edge': { attack: 5, magicAttack: 5, luck: 3 },
+  'arena.orb.shelter': { hp: 18, defense: 4, magicDefense: 4 },
+});
+
+export function arenaCombatStats(jobId: ArenaJobId, loadout: ArenaLoadout = ARENA_DEFAULT_LOADOUT): ArenaCombatStats {
+  const base = NORMALIZED_JOB_STATS[jobId];
+  if (jobId === 'job.wraith') return base;
+  const bonuses = [ARENA_GEAR_STATS[loadout.weaponId], ARENA_GEAR_STATS[loadout.armorId], ARENA_GEAR_STATS[loadout.orbId]];
+  return bonuses.reduce<ArenaCombatStats>((current, bonus) => ({
+    hp: current.hp + (bonus.hp ?? 0),
+    attack: current.attack + (bonus.attack ?? 0),
+    defense: current.defense + (bonus.defense ?? 0),
+    magicAttack: current.magicAttack + (bonus.magicAttack ?? 0),
+    magicDefense: current.magicDefense + (bonus.magicDefense ?? 0),
+    luck: current.luck + (bonus.luck ?? 0),
+  }), base);
+}
+
+export function arenaUsesMagic(jobId: ArenaJobId, loadout: ArenaLoadout = ARENA_DEFAULT_LOADOUT): boolean {
+  if (jobId === 'job.mage' || jobId === 'job.priest' || jobId === 'job.wraith' || jobId === 'job.hexer') return true;
+  return jobId === 'job.tamer' && loadout.weaponId === 'arena.weapon.arc-focus';
+}
+
+function isArenaGearId(value: unknown, slot: ArenaGearSlot): boolean {
+  return typeof value === 'string' && ARENA_GEAR.some((gear) => gear.slot === slot && gear.id === value);
+}
 
 export function arenaTierForScore(score: number): ArenaTier {
   const safeScore = Math.max(0, Math.floor(score));
@@ -168,10 +244,14 @@ export function arenaSeasonResetRating(rating: number): number {
 export function simulateArenaBattle(args: Readonly<{
   attackerJobId: ArenaJobId;
   defenderJobId: ArenaJobId;
+  attackerLoadout?: ArenaLoadout;
+  defenderLoadout?: ArenaLoadout;
   seed: number;
 }>): ArenaBattleSimulation {
-  const attackerStats = NORMALIZED_JOB_STATS[args.attackerJobId];
-  const defenderStats = NORMALIZED_JOB_STATS[args.defenderJobId];
+  const attackerLoadout = args.attackerLoadout ?? ARENA_DEFAULT_LOADOUT;
+  const defenderLoadout = args.defenderLoadout ?? ARENA_DEFAULT_LOADOUT;
+  const attackerStats = arenaCombatStats(args.attackerJobId, attackerLoadout);
+  const defenderStats = arenaCombatStats(args.defenderJobId, defenderLoadout);
   const rng = mulberry32(args.seed >>> 0);
   const firstSide: ArenaBattleSide = rng() < 0.5 ? 'attacker' : 'defender';
   let attackerHp = attackerStats.hp;
@@ -197,6 +277,7 @@ export function simulateArenaBattle(args: Readonly<{
           targetStats: defenderStats,
           wraithPower: attackerWraithPower,
           hexStacks: attackerHex,
+          usesMagic: arenaUsesMagic(args.attackerJobId, attackerLoadout),
           rng,
         });
         attackerHp = result.ownHpAfter;
@@ -215,6 +296,7 @@ export function simulateArenaBattle(args: Readonly<{
           targetStats: attackerStats,
           wraithPower: defenderWraithPower,
           hexStacks: defenderHex,
+          usesMagic: arenaUsesMagic(args.defenderJobId, defenderLoadout),
           rng,
         });
         defenderHp = result.ownHpAfter;
@@ -262,6 +344,7 @@ function resolveAction(args: Readonly<{
   targetStats: ArenaCombatStats;
   wraithPower: number;
   hexStacks: number;
+  usesMagic: boolean;
   rng: () => number;
 }>): Readonly<{
   ownHpAfter: number;
@@ -284,9 +367,8 @@ function resolveAction(args: Readonly<{
     return { ownHpAfter: ownHp, targetHpAfter: targetHp, wraithPowerAfter: wraithPower, hexStacksAfter: hexStacks, hitTarget: false, logs };
   }
 
-  const usesMagic = args.jobId === 'job.mage' || args.jobId === 'job.priest' || args.jobId === 'job.wraith' || args.jobId === 'job.hexer';
-  const offense = usesMagic ? args.stats.magicAttack : args.stats.attack;
-  const defense = usesMagic ? args.targetStats.magicDefense : args.targetStats.defense;
+  const offense = args.usesMagic ? args.stats.magicAttack : args.stats.attack;
+  const defense = args.usesMagic ? args.targetStats.magicDefense : args.targetStats.defense;
   let multiplier = 1;
   if (args.jobId === 'job.warrior' && ownHp <= args.stats.hp * 0.4) multiplier *= 1.5;
   if (args.jobId === 'job.gambler') {

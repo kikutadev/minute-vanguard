@@ -1,9 +1,9 @@
 import { D1PublicPlayerDirectory, createPublicPlayerDirectoryHandler } from '../vendor/idle-game-kit/cloudflare.js';
 import {
-  ARENA_COOLDOWN_MS, ARENA_DAILY_WIN_LIMIT, ARENA_DEFENSE_BARRIER_MS, ARENA_START_RATING,
+  ARENA_COOLDOWN_MS, ARENA_DAILY_WIN_LIMIT, ARENA_DEFENSE_BARRIER_MS, ARENA_START_RATING, ARENA_DEFAULT_LOADOUT,
   arenaAttackSeasonScore, arenaDefenseSeasonScore, arenaJstDayKey, arenaNextTierForScore,
   arenaRatingDeltas, arenaSeasonKey, arenaSeasonResetRating, arenaTierForScore, arenaWeekendMultiplier,
-  simulateArenaBattle,
+  isArenaLoadout, simulateArenaBattle,
 } from '../application/arena-domain.ts';
 
 const GAME_ID = 'minute-vanguard';
@@ -99,6 +99,8 @@ function arenaRoute(pathname) {
   if (randomBattle) return { kind: 'arena-random-battle', gameId: decodeURIComponent(randomBattle[1]), playerId: decodeURIComponent(randomBattle[2]) };
   const barrier = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/barrier$/u);
   if (barrier) return { kind: 'arena-barrier', gameId: decodeURIComponent(barrier[1]), playerId: decodeURIComponent(barrier[2]) };
+  const loadout = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/loadout$/u);
+  if (loadout) return { kind: 'arena-loadout', gameId: decodeURIComponent(loadout[1]), playerId: decodeURIComponent(loadout[2]) };
   const arena = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena$/u);
   if (arena) return { kind: 'arena-player', gameId: decodeURIComponent(arena[1]), playerId: decodeURIComponent(arena[2]) };
   return null;
@@ -285,7 +287,7 @@ async function getArenaRow(db, gameId, playerId) {
   return db.prepare(`
     SELECT game_id, player_id, display_name, job_id, rating, best_rating, season_key,
       season_score, season_attack_score, season_defense_score, wins, losses, draws,
-      next_attack_at_ms, barrier_until_ms, barrier_enabled, created_at_ms, updated_at_ms
+      next_attack_at_ms, barrier_until_ms, barrier_enabled, arena_weapon_id, arena_armor_id, arena_orb_id, created_at_ms, updated_at_ms
     FROM arena_players WHERE game_id = ? AND player_id = ?
   `).bind(gameId, playerId).first();
 }
@@ -332,6 +334,7 @@ function arenaView(row, rank) {
     nextAttackAtMs: Number(row.next_attack_at_ms),
     barrierUntilMs: Number(row.barrier_until_ms),
     barrierEnabled: Number(row.barrier_enabled) !== 0,
+    loadout: { weaponId: row.arena_weapon_id, armorId: row.arena_armor_id, orbId: row.arena_orb_id },
     rank,
     tierId: tier.id, tierName: tier.displayName,
     nextTierName: nextTier?.displayName ?? null,
@@ -357,9 +360,9 @@ async function handleArenaRegister(request, env, gameId, playerId) {
       INSERT INTO arena_players (
         game_id, player_id, display_name, job_id, rating, best_rating, season_key,
         season_score, season_attack_score, season_defense_score, wins, losses, draws,
-        next_attack_at_ms, barrier_until_ms, barrier_enabled, created_at_ms, updated_at_ms
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 1, ?, ?)
-    `).bind(gameId, playerId, name, jobId, ARENA_START_RATING, ARENA_START_RATING, seasonKey, nowMs, nowMs).run();
+        next_attack_at_ms, barrier_until_ms, barrier_enabled, arena_weapon_id, arena_armor_id, arena_orb_id, created_at_ms, updated_at_ms
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, 0, 0, 1, ?, ?, ?, ?, ?)
+    `).bind(gameId, playerId, name, jobId, ARENA_START_RATING, ARENA_START_RATING, seasonKey, ARENA_DEFAULT_LOADOUT.weaponId, ARENA_DEFAULT_LOADOUT.armorId, ARENA_DEFAULT_LOADOUT.orbId, nowMs, nowMs).run();
   } else {
     const normalized = await normalizeArenaSeason(env.PUBLIC_PLAYER_DB, existing, nowMs);
     await env.PUBLIC_PLAYER_DB.prepare(`
@@ -410,6 +413,25 @@ async function handleArenaBarrier(request, env, gameId, playerId) {
     UPDATE arena_players SET barrier_enabled = ?, barrier_until_ms = CASE WHEN ? = 0 THEN 0 ELSE barrier_until_ms END, updated_at_ms = ?
     WHERE game_id = ? AND player_id = ?
   `).bind(parsed.value.enabled ? 1 : 0, parsed.value.enabled ? 1 : 0, nowMs, gameId, playerId).run();
+  const updated = await getArenaRow(env.PUBLIC_PLAYER_DB, gameId, playerId);
+  return json(request, { arena: arenaView(updated, await arenaRank(env.PUBLIC_PLAYER_DB, updated)) });
+}
+
+async function handleArenaLoadout(request, env, gameId, playerId) {
+  if (gameId !== GAME_ID) return json(request, { error: 'unknown-game' }, { status: 404 });
+  const auth = await authenticateOwner(request, env.PUBLIC_PLAYER_DB, gameId, playerId);
+  if (!auth.ok) return json(request, { error: auth.error }, { status: auth.status });
+  const parsed = await readSmallJson(request, 1_024);
+  if (parsed.error) return json(request, { error: parsed.error }, { status: parsed.error === 'payload-too-large' ? 413 : 400 });
+  if (!isArenaLoadout(parsed.value)) return json(request, { error: 'invalid-arena-loadout' }, { status: 400 });
+  const nowMs = Date.now();
+  const existing = await getArenaRow(env.PUBLIC_PLAYER_DB, gameId, playerId);
+  if (existing === null) return json(request, { error: 'arena-not-joined' }, { status: 404 });
+  await normalizeArenaSeason(env.PUBLIC_PLAYER_DB, existing, nowMs);
+  await env.PUBLIC_PLAYER_DB.prepare(`
+    UPDATE arena_players SET arena_weapon_id = ?, arena_armor_id = ?, arena_orb_id = ?, updated_at_ms = ?
+    WHERE game_id = ? AND player_id = ?
+  `).bind(parsed.value.weaponId, parsed.value.armorId, parsed.value.orbId, nowMs, gameId, playerId).run();
   const updated = await getArenaRow(env.PUBLIC_PLAYER_DB, gameId, playerId);
   return json(request, { arena: arenaView(updated, await arenaRank(env.PUBLIC_PLAYER_DB, updated)) });
 }
@@ -505,8 +527,12 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
   const defenderName = isBot ? opponent.displayName : opponent.display_name;
   const defenderJobId = isBot ? opponent.jobId : opponent.job_id;
   const defenderRating = Number(opponent.rating);
+  const attackerLoadout = { weaponId: attacker.arena_weapon_id, armorId: attacker.arena_armor_id, orbId: attacker.arena_orb_id };
+  const defenderLoadout = isBot
+    ? ARENA_DEFAULT_LOADOUT
+    : { weaponId: opponent.arena_weapon_id, armorId: opponent.arena_armor_id, orbId: opponent.arena_orb_id };
   const seed = randomUint32();
-  const simulation = simulateArenaBattle({ attackerJobId: attacker.job_id, defenderJobId, seed });
+  const simulation = simulateArenaBattle({ attackerJobId: attacker.job_id, defenderJobId, attackerLoadout, defenderLoadout, seed });
   const ratingDeltas = isBot ? { attacker: 0, defender: 0 } : arenaRatingDeltas(Number(attacker.rating), defenderRating, simulation.outcome);
   const attackScoreGain = isBot ? 0 : arenaAttackSeasonScore(defenderRating, simulation.outcome, nowMs);
   let defenseScoreGain = 0;
@@ -566,7 +592,7 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
       attackerMaxHp: simulation.attackerMaxHp, defenderMaxHp: simulation.defenderMaxHp,
       attackerHpAfter: simulation.attackerHpAfter, defenderHpAfter: simulation.defenderHpAfter,
       turns: simulation.turns,
-      opponent: { playerId: defenderId, displayName: defenderName, jobId: defenderJobId, ratingBefore: defenderRating, isBot },
+      opponent: { playerId: defenderId, displayName: defenderName, jobId: defenderJobId, ratingBefore: defenderRating, isBot, loadout: defenderLoadout },
       ratingBefore: Number(attacker.rating), ratingAfter: Number(updated.rating), ratingDelta: ratingDeltas.attacker,
       seasonScoreGain: attackScoreGain, seasonScoreAfter: Number(updated.season_score),
       weekendMultiplier: arenaWeekendMultiplier(nowMs), nextAttackAtMs,
@@ -589,6 +615,7 @@ export default {
       if (arena?.kind === 'arena-player' && request.method === 'GET') return await handleArenaGet(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-player' && request.method === 'DELETE') return await handleArenaDelete(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-barrier' && request.method === 'PUT') return await handleArenaBarrier(request, env, arena.gameId, arena.playerId);
+      if (arena?.kind === 'arena-loadout' && request.method === 'PUT') return await handleArenaLoadout(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-random-battle' && request.method === 'POST') return await handleArenaRandomBattle(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-history' && request.method === 'GET') return await handleArenaHistory(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-leaderboard' && request.method === 'GET') return await handleArenaLeaderboard(request, env, arena.gameId);

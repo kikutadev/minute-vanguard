@@ -1,4 +1,4 @@
-import type { ArenaBattleOutcome, ArenaBattleSide, ArenaBattleTurn, ArenaJobId } from './arena-domain';
+import type { ArenaBattleOutcome, ArenaBattleSide, ArenaBattleTurn, ArenaJobId, ArenaLoadout } from './arena-domain';
 
 export type ArenaPlayerView = Readonly<{
   playerId: string;
@@ -16,6 +16,7 @@ export type ArenaPlayerView = Readonly<{
   nextAttackAtMs: number;
   barrierUntilMs: number;
   barrierEnabled: boolean;
+  loadout: ArenaLoadout;
   rank: number | null;
   tierId: string;
   tierName: string;
@@ -43,6 +44,7 @@ export type ArenaBattleOpponent = Readonly<{
   jobId: ArenaJobId;
   ratingBefore: number;
   isBot: boolean;
+  loadout: ArenaLoadout;
 }>;
 
 export type ArenaBattleResult = Readonly<{

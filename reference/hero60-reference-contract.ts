@@ -40,6 +40,7 @@ export const hero60Reference = {
   mimicBank: { outcomeMultipliers: [0.1, 0.5, 1, 2] as const, withdrawGemCostMin: 10, withdrawGemCostMax: 30, exactOddsPublic: false },
   achievementTitles: { referenceCountAtLeast: 300, selectableDisplaySlots: 1 },
   arena: {
+    dedicatedLoadout: { slots: ['weapon', 'armor', 'orb'] as const, free: true, appliesToAttackAndDefense: true, exactValuesPublic: false },
     weeklyResetWeekdayJst: 'monday',
     weeklyResetHourJst: 0,
     initialRating: 1000,

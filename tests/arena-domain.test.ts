@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   ARENA_COOLDOWN_MS,
+  ARENA_DEFAULT_LOADOUT,
+  ARENA_GEAR,
   ARENA_DAILY_WIN_LIMIT,
   ARENA_DEFENSE_BARRIER_MS,
   ARENA_MAX_TURNS,
   arenaAttackSeasonScore,
+  arenaCombatStats,
+  arenaGearBySlot,
   arenaDefenseSeasonScore,
   arenaJstDayKey,
   arenaNextTierForScore,
@@ -13,6 +17,7 @@ import {
   arenaSeasonResetRating,
   arenaTierForScore,
   arenaWeekendMultiplier,
+  arenaUsesMagic,
   simulateArenaBattle,
 } from '../application/arena-domain';
 
@@ -70,6 +75,28 @@ describe('arena domain', () => {
     expect(ARENA_COOLDOWN_MS).toBe(60_000);
     expect(ARENA_DEFENSE_BARRIER_MS).toBe(7_200_000);
     expect(ARENA_DAILY_WIN_LIMIT).toBe(3);
+  });
+
+  it('offers three free choices in every server-owned Arena equipment slot', () => {
+    expect(arenaGearBySlot('weapon')).toHaveLength(3);
+    expect(arenaGearBySlot('armor')).toHaveLength(3);
+    expect(arenaGearBySlot('orb')).toHaveLength(3);
+    expect(ARENA_GEAR).toHaveLength(9);
+  });
+
+  it('applies Arena gear to normalized stats while Wraith ignores equipment', () => {
+    const offensive = { weaponId: 'arena.weapon.vanguard-blade', armorId: 'arena.armor.scout-coat', orbId: 'arena.orb.edge' } as const;
+    expect(arenaCombatStats('job.warrior', offensive).attack).toBeGreaterThan(arenaCombatStats('job.warrior', ARENA_DEFAULT_LOADOUT).attack);
+    expect(arenaCombatStats('job.wraith', offensive)).toEqual(arenaCombatStats('job.wraith', ARENA_DEFAULT_LOADOUT));
+  });
+
+  it('lets Tamer switch to magic Arena attacks with the Arena staff', () => {
+    const staff = { ...ARENA_DEFAULT_LOADOUT, weaponId: 'arena.weapon.arc-focus' } as const;
+    expect(arenaUsesMagic('job.tamer', ARENA_DEFAULT_LOADOUT)).toBe(false);
+    expect(arenaUsesMagic('job.tamer', staff)).toBe(true);
+    const physical = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.warrior', attackerLoadout: ARENA_DEFAULT_LOADOUT, seed: 81 });
+    const magical = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.warrior', attackerLoadout: staff, seed: 81 });
+    expect(magical).not.toEqual(physical);
   });
 
   it('uses the published tier thresholds', () => {

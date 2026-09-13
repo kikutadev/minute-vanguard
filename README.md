@@ -40,6 +40,7 @@ Implemented in the current build:
 - local `pnpm deploy:pages` publishing that pushes only built `dist/` contents to the `gh-pages` branch; no GitHub Actions required
 - opt-in Cloudflare Worker + D1 public profiles and non-authoritative reference leaderboards
 - server-authoritative weekly Arena: normalized server combat, Rating, Season Score, Champion crown, fixed PvP cooldown, defense barrier and battle history
+- free server-owned Arena weapon / armor / orb loadouts used for both attack and defense; concrete balance remains Minute Vanguard-owned because the public reference does not expose the full stat table
 
 ## Kit boundary
 

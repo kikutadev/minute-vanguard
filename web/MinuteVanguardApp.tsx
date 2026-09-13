@@ -3,6 +3,7 @@ import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit'
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
 import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
+import { arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout } from '../application/arena-domain';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -545,6 +546,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   const [leaderboard, setLeaderboard] = useState<readonly ArenaLeaderboardEntry[]>([]);
   const [history, setHistory] = useState<readonly ArenaHistoryEntry[]>([]);
   const [battle, setBattle] = useState<ArenaBattleResult | null>(null);
+  const [gearOpen, setGearOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -611,6 +613,18 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     finally { setBusy(false); }
   };
 
+  const equipArenaGear = async (slot: ArenaGearSlot, gearId: ArenaGearDefinition['id']) => {
+    if (arena === null) return;
+    let next: ArenaLoadout;
+    if (slot === 'weapon') next = { ...arena.loadout, weaponId: gearId as ArenaLoadout['weaponId'] };
+    else if (slot === 'armor') next = { ...arena.loadout, armorId: gearId as ArenaLoadout['armorId'] };
+    else next = { ...arena.loadout, orbId: gearId as ArenaLoadout['orbId'] };
+    setBusy(true); setError(null);
+    try { setArena(await getMinuteVanguardOnlineClient().setArenaLoadout(next)); }
+    catch { setError('アリーナ装備を変更できませんでした'); }
+    finally { setBusy(false); }
+  };
+
   const leave = async () => {
     if (!window.confirm('アリーナ戦績・レート・シーズンスコアを削除して退会しますか？')) return;
     setBusy(true); setError(null);
@@ -657,6 +671,24 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         {busy ? 'MATCHING…' : cooldownSec > 0 ? `${cooldownSec}秒` : '⚔ ランダムマッチ'}
       </button>
       <small>固定60秒 · モンスター戦とは別枠 · Gem/Rushで短縮不可</small>
+    </div>
+
+    <div className="arena-loadout-card">
+      <button className="arena-loadout-head" onClick={() => setGearOpen((open) => !open)}>
+        <span><strong>アリーナ装備</strong><small>無料 · 攻撃/防衛共通 · サーバー保存</small></span>
+        <em>{gearOpen ? '閉じる' : '変更する'}</em>
+      </button>
+      <div className="arena-loadout-summary">
+        {(['weapon', 'armor', 'orb'] as const).map((slot) => {
+          const currentId = slot === 'weapon' ? arena.loadout.weaponId : slot === 'armor' ? arena.loadout.armorId : arena.loadout.orbId;
+          const gearDef = arenaGearBySlot(slot).find((item) => item.id === currentId)!;
+          return <span key={slot}><b>{gearDef.icon}</b><small>{slot === 'weapon' ? '武器' : slot === 'armor' ? '防具' : 'オーブ'}</small><strong>{gearDef.displayName}</strong></span>;
+        })}
+      </div>
+      {gearOpen && <div className="arena-gear-picker">{(['weapon', 'armor', 'orb'] as const).map((slot) => {
+        const currentId = slot === 'weapon' ? arena.loadout.weaponId : slot === 'armor' ? arena.loadout.armorId : arena.loadout.orbId;
+        return <section key={slot}><h4>{slot === 'weapon' ? '武器' : slot === 'armor' ? '防具' : 'オーブ'}</h4>{arenaGearBySlot(slot).map((gearDef) => <button key={gearDef.id} className={gearDef.id === currentId ? 'active' : ''} disabled={busy || gearDef.id === currentId} onClick={() => void equipArenaGear(slot, gearDef.id)}><span>{gearDef.icon}</span><div><strong>{gearDef.displayName}</strong><small>{gearDef.description}</small></div><em>{gearDef.id === currentId ? '装備中' : '無料'}</em></button>)}</section>;
+      })}<p>{arena.jobId === 'job.wraith' ? '幽鬼は職業特性によりArena装備のステータス補正を受けません。' : '通常装備・Gold・ローカルセーブ値はArena戦闘へ入りません。'}</p></div>}
     </div>
 
     <div className="arena-defense-card">

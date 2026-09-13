@@ -89,7 +89,7 @@ describe('MinuteVanguardOnlineClient', () => {
     const arena = {
       playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1000, bestRating: 1000,
       seasonKey: '2026-09-07', seasonScore: 0, seasonAttackScore: 0, seasonDefenseScore: 0,
-      wins: 0, losses: 0, draws: 0, nextAttackAtMs: 0, barrierUntilMs: 0, barrierEnabled: true,
+      wins: 0, losses: 0, draws: 0, nextAttackAtMs: 0, barrierUntilMs: 0, barrierEnabled: true, loadout: { weaponId: 'arena.weapon.vanguard-blade', armorId: 'arena.armor.guard-plate', orbId: 'arena.orb.balance' },
       rank: 1, tierId: 'iron', tierName: 'アイアン', nextTierName: 'ブロンズ', nextTierScore: 300,
     };
     const requests: Array<{ url: string; method: string }> = [];
@@ -103,11 +103,12 @@ describe('MinuteVanguardOnlineClient', () => {
         battle: {
           battleId: 'battle-1', combatVersion: 1, resolvedAtMs: 1_000, seed: 4, outcome: 'win', firstSide: 'attacker',
           attackerMaxHp: 118, defenderMaxHp: 118, attackerHpAfter: 50, defenderHpAfter: 0, turns: [],
-          opponent: { playerId: 'opponent-1', displayName: 'Rival', jobId: 'job.mage', ratingBefore: 1000, isBot: false },
+          opponent: { playerId: 'opponent-1', displayName: 'Rival', jobId: 'job.mage', ratingBefore: 1000, isBot: false, loadout: { weaponId: 'arena.weapon.vanguard-blade', armorId: 'arena.armor.guard-plate', orbId: 'arena.orb.balance' } },
           ratingBefore: 1000, ratingAfter: 1016, ratingDelta: 16, seasonScoreGain: 20, seasonScoreAfter: 20,
           weekendMultiplier: 2, nextAttackAtMs: 60_000,
         },
       });
+      if (url.endsWith('/arena/loadout')) return jsonResponse({ arena: { ...arena, loadout: JSON.parse(String(init?.body)) } });
       if (url.endsWith('/arena/barrier')) return jsonResponse({ arena: { ...arena, barrierEnabled: false } });
       if (url.includes('/arena/leaderboard')) return jsonResponse({ entries: [{ rank: 1, playerId: 'arena-1', displayName: '勇者', jobId: 'job.adventurer', rating: 1016, bestRating: 1016, seasonScore: 20, wins: 1, losses: 0, draws: 0, isChampion: true }] });
       if (url.endsWith('/arena/history')) return jsonResponse({ entries: [{ battleId: 'battle-1', resolvedAtMs: 1_000, role: 'attack', opponentName: 'Rival', opponentJobId: 'job.mage', outcome: 'win', ratingDelta: 16, scoreGain: 20 }] });
@@ -126,10 +127,13 @@ describe('MinuteVanguardOnlineClient', () => {
     expect((await client.listArenaLeaderboard())[0]?.isChampion).toBe(true);
     expect((await client.listArenaHistory())[0]?.role).toBe('attack');
     expect((await client.setArenaBarrier(false)).barrierEnabled).toBe(false);
+    const loadout = { weaponId: 'arena.weapon.arc-focus', armorId: 'arena.armor.ward-robe', orbId: 'arena.orb.shelter' } as const;
+    expect((await client.setArenaLoadout(loadout)).loadout).toEqual(loadout);
     await client.leaveArena();
 
     expect(requests.some((request) => request.url.endsWith('/players/claim') && request.method === 'POST')).toBe(true);
     expect(requests.some((request) => request.url.endsWith('/arena/battles/random') && request.method === 'POST')).toBe(true);
+    expect(requests.some((request) => request.url.endsWith('/arena/loadout') && request.method === 'PUT')).toBe(true);
     expect(requests.some((request) => request.url.endsWith('/arena') && request.method === 'DELETE')).toBe(true);
   });
 
