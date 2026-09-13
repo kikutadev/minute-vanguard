@@ -1,5 +1,7 @@
 export * from './browser-ad-adapter.js';
+export * from './browser-purchase-provider.js';
 export * from './fake-ad-adapter.js';
+export * from './fake-purchase-provider.js';
 export * from './indexeddb-profile-repository.js';
 export * from './persistent-storage.js';
 export * from './service-worker.js';

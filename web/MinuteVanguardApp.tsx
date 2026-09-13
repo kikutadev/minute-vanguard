@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import type { PublicPlayerSnapshot } from 'idle-game-kit';
+import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit';
+import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
 import {
   createMinuteVanguardPublicData,
@@ -17,6 +18,7 @@ import {
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
 import { soloAchievementCategoryLabels, soloAchievementDefinitions, type SoloAchievementCategory } from '../definitions/achievement-definitions';
+import { battleSceneDefinition, type BattleSceneDaypart } from '../definitions/battle-scene-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
 import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
@@ -106,7 +108,27 @@ const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
 type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | 'tap-game' | null;
+type NoticePresentation = PresentationQueueItem & Readonly<{ text: string }>;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
+
+const DAYPART_LABELS: Readonly<Record<BattleSceneDaypart, string>> = { morning: '朝', day: '昼', evening: '夕', night: '夜' };
+
+function battleSceneDaypart(date = new Date()): BattleSceneDaypart {
+  const hour = date.getHours();
+  if (hour >= 5 && hour < 10) return 'morning';
+  if (hour >= 10 && hour < 17) return 'day';
+  if (hour >= 17 && hour < 20) return 'evening';
+  return 'night';
+}
+
+function battleSceneProps(monsterLevel: number): Readonly<{ className: string; label: string }> {
+  const definition = battleSceneDefinition(monsterLevel);
+  const daypart = battleSceneDaypart();
+  return {
+    className: `battle-scene ${definition.cssClass} scene-${daypart}`,
+    label: `Lv.${definition.monsterLevel} · ${definition.displayName} · ${DAYPART_LABELS[daypart]}`,
+  };
+}
 
 export function MinuteVanguardApp() {
   const [state, setState] = useState<MinuteVanguardState | null>(null);
@@ -116,8 +138,19 @@ export function MinuteVanguardApp() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResult | null>(null);
   const [battleStep, setBattleStep] = useState(0);
-  const [notice, setNotice] = useState('');
   const stateRef = useRef<MinuteVanguardState | null>(null);
+  const noticeSequenceRef = useRef(1);
+  const { current: noticePresentation, enqueue: enqueueNotice } = usePresentationQueue<NoticePresentation>(() => 2_400);
+  const setNotice = (message: string) => {
+    if (message.length === 0) return;
+    enqueueNotice([{
+      id: `notice:${noticeSequenceRef.current++}`,
+      text: message,
+      presentationPriority: 100,
+      presentationCoalescingKey: 'global-notice',
+      presentationPreemption: 'discard-current',
+    }]);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -132,11 +165,6 @@ export function MinuteVanguardApp() {
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
-  useEffect(() => {
-    if (notice.length === 0) return;
-    const id = window.setTimeout(() => setNotice(''), 2_400);
-    return () => window.clearTimeout(id);
-  }, [notice]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -313,7 +341,13 @@ export function MinuteVanguardApp() {
         {tab === 'ranking' && <RankingView state={state} />}
       </div>
 
-      {notice && <p className="global-notice" role="status">{notice}</p>}
+      {noticePresentation !== null && (
+        <div className="global-notice">
+          <Motion as="span" preset="reveal" motionKey={noticePresentation.id}>
+            <span role="status">{noticePresentation.text}</span>
+          </Motion>
+        </div>
+      )}
 
       <nav className="bottom-nav" aria-label="メインナビゲーション">
         <NavButton icon="🛒" label="ショップ" active={tab === 'shop'} onClick={() => setTab('shop')} />
@@ -389,11 +423,12 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   const skipCost = cooldownSkipCost(state);
   const freeSkips = freeCooldownSkipsRemaining(state);
   const last = state.gameData.lastBattle;
+  const scene = battleSceneProps(state.gameData.selectedMonsterLevel);
   return <section className="battle-page page-section">
     <div className="section-tabs"><button className="active">⚔ モンスター戦</button><button disabled>🏆 チャンプ戦</button></div>
     <div className="battle-control-card">
       <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><span className="online-dot">● 1人プレイ</span></div>
-      <div className="battle-illustration">
+      <div className={`battle-illustration ${scene.className}`} data-scene={scene.label}>
         <div className="battle-sigil">⚔</div>
         <p>{state.gameData.victories < 10 ? `初心者ボーナス：あと ${10 - state.gameData.victories}体は5秒待機` : `通常待機 ${effectiveBattleCooldownSec(state)}秒`}</p>
         <div className="active-boosts">
@@ -701,8 +736,9 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
   const playerHp = currentTurn?.playerHpAfter ?? props.result.playerHpStart;
   const enemyHp = currentTurn?.enemyHpAfter ?? props.result.enemyHpMax;
   const complete = props.step >= props.result.turns.length;
+  const scene = battleSceneProps(props.result.monsterLevel);
   return <div className="modal-backdrop battle-modal-backdrop"><section className="battle-result-modal">
-    <div className="battle-stage">
+    <div className={`battle-stage ${scene.className}`} data-scene={scene.label}>
       <Combatant side="enemy" name={props.result.enemyName} glyph={props.result.enemyGlyph} hp={enemyHp} maxHp={props.result.enemyHpMax} attacking={currentTurn !== undefined && currentTurn.enemyDamage > 0} hit={currentTurn !== undefined && currentTurn.playerDamage + currentTurn.playerExtraDamage + currentTurn.petDamage > 0} defeated={enemyHp <= 0} />
       <span className="vs-mark">VS</span>
       <Combatant side="player" name={props.jobName} glyph="🧑‍🚀" hp={playerHp} maxHp={props.result.playerHpMax} attacking={currentTurn !== undefined && currentTurn.playerDamage > 0} hit={currentTurn !== undefined && currentTurn.enemyDamage > 0} defeated={playerHp <= 0} />
@@ -1053,7 +1089,17 @@ function MenuModal(props: Readonly<{ loginAvailable: boolean; onLogin: () => voi
 }
 
 function ModalFrame(props: Readonly<{ title: string; onClose: () => void; children: React.ReactNode }>) {
-  return <div className="modal-backdrop"><section className="sheet-modal"><header><h2>{props.title}</h2><button onClick={props.onClose}>×</button></header><div className="sheet-content">{props.children}</div></section></div>;
+  return (
+    <BottomSheet
+      title={props.title}
+      onClose={props.onClose}
+      closeLabel="閉じる"
+      backdropClassName="modal-backdrop"
+      sheetClassName="sheet-modal"
+    >
+      <div className="sheet-content">{props.children}</div>
+    </BottomSheet>
+  );
 }
 
 function StatTable(props: Readonly<{ data: Partial<Record<StatKey, number>>; prefix?: string; suffix?: string }>) {

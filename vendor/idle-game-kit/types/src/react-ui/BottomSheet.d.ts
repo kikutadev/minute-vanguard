@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { type ReactNode } from 'react';
 export interface BottomSheetProps {
     readonly title: string;
     readonly onClose: () => void;
@@ -11,7 +11,7 @@ export interface BottomSheetProps {
     readonly closeButtonClassName?: string;
 }
 /**
- * Unstyled bottom-sheet shell with dialog semantics and backdrop dismissal.
- * Visuals, sizing and motion remain entirely consumer-owned.
+ * Theme-neutral bottom-sheet shell with modal dialog semantics.
+ * Visuals, sizing and motion remain consumer-owned while keyboard focus stays inside the dialog.
  */
 export declare function BottomSheet({ title, onClose, children, ariaLabel, closeLabel, backdropClassName, sheetClassName, headerClassName, closeButtonClassName, }: BottomSheetProps): import("react").JSX.Element;

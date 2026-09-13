@@ -1183,6 +1183,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     enemyName: `${mutated ? '【変異】' : ''}${enemy.displayName}`,
     enemyGlyph: enemy.glyph,
     enemyRarity: enemy.rarity,
+    monsterLevel: enemy.monsterLevel,
     mutated,
     outcome,
     turns,
@@ -1222,7 +1223,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
 }
 
 function battleResultToLogEntry(result: BattleResult, resolvedAtMs: number): BattleLogEntry {
-  const monsterLevel = enemies.find((enemy) => enemy.id === result.enemyId)?.monsterLevel ?? 1;
+  const monsterLevel = result.monsterLevel ?? enemies.find((enemy) => enemy.id === result.enemyId)?.monsterLevel ?? 1;
   return {
     battleIndex: result.battleIndex,
     resolvedAtMs,

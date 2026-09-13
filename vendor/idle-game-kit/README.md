@@ -11,11 +11,12 @@ The repository contains the reusable kit plus multiple product-owned Reference P
 - Active gain, continuous activities, and timed activities
 - Deterministic named RNG streams and gacha rules
 - Rewards, tokens, achievements, titles, boosts, calendar rewards, and prestige
-- Rewarded-offer rules separated from provider availability
+- Rewarded-offer rules separated from provider availability, plus provider-neutral rewarded-ad orchestration
+- Optional non-consumable purchase/entitlement contract with idempotent restore and provider completion ordering
 - Platform-neutral save/export/import contracts
 - Web adapters for IndexedDB, persistent storage, browser ads, Google Publisher Tag, PWA service workers, and deployment-base-aware assets
 - Same-core simulation, wait/no-action analysis, wall detection, and reusable balance targets
-- Optional React binding/primitives: `useApplicationStore`, `ProgressBar`, and `BottomSheet`
+- Optional React presentation helpers: store binding, semantic progress/dialog/attention/async-action primitives, transient presentation queue, and reduced-motion-aware motion presets
 
 Daily / Weekly Mission is a reusable Kit capability with period-local counter/state objectives, manual/auto claims, point milestones, and definition validation; Grimoire Rewrite is the first product intended to consume it.
 
@@ -75,7 +76,7 @@ import { GameNumber, advanceContinuousActivity } from 'idle-game-kit';
 import { runSimulation } from 'idle-game-kit/simulator';
 import { FakeAdAdapter } from 'idle-game-kit/web';
 import { CloudflarePublicPlayerDirectory } from 'idle-game-kit/cloudflare';
-import { ProgressBar, useApplicationStore } from 'idle-game-kit/react';
+import { Motion, ProgressBar, useApplicationStore } from 'idle-game-kit/react';
 ```
 
 The generated package contains ESM bundles, TypeScript declarations and README only. Reference Product assets, manifests, CSS and world-specific implementation are excluded. `pnpm test:package` verifies the packed kit from an isolated Mining Outpost consumer.

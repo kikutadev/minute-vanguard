@@ -17,6 +17,7 @@ const checks = [
   ['patchnotes', 'monsters.sequentialUnlock', ['Lv9モンスターを倒すとLv10', 'Lv10モンスターを倒すと挑戦', 'Lv11モンスターを倒すと挑戦', 'Lv12モンスターを倒すと挑戦']],
   ['patchnotes', 'battle.cooldownPastime', ['モンスター叩き', '6マス', '3点減', '報酬はなく', '自己ベストはこの端末にだけ']],
   ['patchnotes', 'battle.selfLog', ['戦闘ログの表示件数を10件・30件・50件', '「自分」のログは端末ごとに記録']],
+  ['patchnotes', 'battle.visualScenes', ['バトル結果の背景が、モンスターのレベルと時間帯で変わる', '朝・昼・夕方・夜']],
   ['guide', 'goldBags.core', ['小銭袋', '30', 'ずだ袋', '100', '大金庫', '300', '直近10戦', '2回以上']],
   ['guide', 'progression.jobCurrent', ['301回目 Lv.210', '1〜200回目 +5%', '201〜300回目 +4%', '301回目以降はずっと +3%', '全装備を外して戦う', '杖を持つと自分の攻撃も魔法になる']],
   ['patchnotes', 'progression.ninjaCurrent', ['最大15%', '通常戦闘（最大20ターン）で倒しきれるか']],

@@ -143,6 +143,8 @@ During an active battle cooldown, the player can open a reward-free `Monster Tap
 
 The battle screen also keeps a local battle history. Only lightweight summaries are stored (not 20-turn transcripts), newest-first with a 50-entry cap. The visible count is selectable between 10 / 30 / 50 and is stored per browser/device. Solo mode intentionally exposes only `自分のログ`; the public `みんな` feed remains an online feature.
 
+Battle presentation uses 13 original scene identities, one per monster level. The pre-battle card and resolved battle share the same scene identity, while a local-device morning/day/evening/night overlay changes atmosphere without affecting simulation or save data. These are CSS-authored Minute Vanguard scenes rather than copied reference artwork.
+
 The solo collection also includes 104 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
 
 ## Pets

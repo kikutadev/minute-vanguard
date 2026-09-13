@@ -126,6 +126,7 @@ export type BattleResult = Readonly<{
   enemyName: string;
   enemyGlyph: string;
   enemyRarity: MonsterRarity;
+  monsterLevel: number;
   mutated: boolean;
   outcome: 'victory' | 'draw' | 'defeat';
   turns: readonly BattleTurn[];

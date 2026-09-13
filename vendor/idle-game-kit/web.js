@@ -72,8 +72,60 @@ function a() {
 	return typeof crypto < "u" && typeof crypto.randomUUID == "function" ? `client:${crypto.randomUUID()}` : (i += 1, `client:${Date.now()}:${i}`);
 }
 //#endregion
-//#region src/platform/web/fake-ad-adapter.ts
+//#region src/platform/web/browser-purchase-provider.ts
 var o = class {
+	async loadProducts(e) {
+		let t = s();
+		if (t === null) return [];
+		try {
+			return (await t.loadProducts({ productIds: e })).filter(c);
+		} catch {
+			return [];
+		}
+	}
+	async purchase(e) {
+		let t = s();
+		if (t === null) return { status: "unavailable" };
+		try {
+			let n = await t.purchase({ productId: e });
+			return n.status === "purchased" ? l(n.transaction) && n.transaction.productId === e ? n : { status: "error" } : [
+				"pending",
+				"cancelled",
+				"unavailable",
+				"error"
+			].includes(n.status) ? n : { status: "error" };
+		} catch {
+			return { status: "error" };
+		}
+	}
+	async restore() {
+		let e = s();
+		if (e === null) return { status: "unavailable" };
+		try {
+			let t = await e.restore();
+			return t.status === "restored" ? t.transactions.some((e) => !l(e)) ? { status: "error" } : t : t.status === "unavailable" || t.status === "error" ? t : { status: "error" };
+		} catch {
+			return { status: "error" };
+		}
+	}
+	async finishTransaction(e) {
+		let t = s();
+		if (t === null) throw Error("Purchase provider unavailable.");
+		await t.finishTransaction({ transactionId: e });
+	}
+};
+function s() {
+	return typeof window > "u" ? null : window.__IDLE_GAME_PURCHASE_PROVIDER__ ?? null;
+}
+function c(e) {
+	return e.productId.trim().length > 0 && e.displayName.trim().length > 0 && e.priceText.trim().length > 0;
+}
+function l(e) {
+	return e.transactionId.trim().length > 0 && e.transactionId.length <= 512 && e.productId.trim().length > 0 && e.productId.length <= 256;
+}
+//#endregion
+//#region src/platform/web/fake-ad-adapter.ts
+var u = class {
 	#e;
 	#t;
 	#n = 0;
@@ -96,13 +148,55 @@ var o = class {
 	isBannerVisible(e) {
 		return this.#r.has(e);
 	}
-}, s = "profiles", c = class {
+}, d = class {
+	#e;
+	#t;
+	#n;
+	#r = /* @__PURE__ */ new Map();
+	#i = /* @__PURE__ */ new Set();
+	#a = 0;
+	constructor(e) {
+		this.#e = new Map(e.products.map((e) => [e.productId, e])), this.#t = e.available ?? !0, this.#n = e.purchaseOutcome ?? "purchased";
+		for (let t of e.restoredTransactions ?? []) this.#r.set(t.transactionId, t);
+	}
+	loadProducts(e) {
+		return this.#t ? Promise.resolve(e.flatMap((e) => {
+			let t = this.#e.get(e);
+			return t === void 0 ? [] : [t];
+		})) : Promise.resolve([]);
+	}
+	purchase(e) {
+		if (!this.#t || !this.#e.has(e)) return Promise.resolve({ status: "unavailable" });
+		if (this.#n !== "purchased") return Promise.resolve({ status: this.#n });
+		this.#a += 1;
+		let t = {
+			transactionId: `fake-purchase:${e}:${this.#a}`,
+			productId: e
+		};
+		return this.#r.set(t.transactionId, t), Promise.resolve({
+			status: "purchased",
+			transaction: t
+		});
+	}
+	restore() {
+		return this.#t ? Promise.resolve({
+			status: "restored",
+			transactions: [...this.#r.values()]
+		}) : Promise.resolve({ status: "unavailable" });
+	}
+	finishTransaction(e) {
+		return this.#r.has(e) ? (this.#i.add(e), Promise.resolve()) : Promise.reject(/* @__PURE__ */ Error(`Unknown fake purchase transaction: ${e}`));
+	}
+	isTransactionFinished(e) {
+		return this.#i.has(e);
+	}
+}, f = "profiles", p = class {
 	#e;
 	#t;
 	#n;
 	#r = null;
 	constructor(e) {
-		this.#e = e.dbName, this.#t = e.storeName ?? s, this.#n = e.indexedDb ?? indexedDB;
+		this.#e = e.dbName, this.#t = e.storeName ?? f, this.#n = e.indexedDb ?? indexedDB;
 	}
 	async load(e) {
 		let t = await this.#i();
@@ -137,7 +231,7 @@ var o = class {
 };
 //#endregion
 //#region src/platform/web/persistent-storage.ts
-async function l(e = u()) {
+async function m(e = h()) {
 	if (e?.persisted === void 0 || e.persist === void 0) return "unsupported";
 	try {
 		return await e.persisted() ? "already-persisted" : await e.persist() ? "granted" : "denied";
@@ -145,19 +239,19 @@ async function l(e = u()) {
 		return "error";
 	}
 }
-function u() {
+function h() {
 	if (!(typeof navigator > "u")) return navigator.storage;
 }
 //#endregion
 //#region src/platform/web/service-worker.ts
-function d(e, t) {
+function g(e, t) {
 	let n = new URL(e, t);
 	return new URL("sw.js", n).href;
 }
-async function f() {
+async function _() {
 	if (!("serviceWorker" in navigator)) return null;
 	try {
-		let e = d("/", document.baseURI), t = await navigator.serviceWorker.register(e);
+		let e = g("/", document.baseURI), t = await navigator.serviceWorker.register(e);
 		try {
 			await t.update();
 		} catch {}
@@ -168,7 +262,7 @@ async function f() {
 }
 //#endregion
 //#region src/platform/web/google-publisher-tag-provider.ts
-var p = class {
+var v = class {
 	#e;
 	#t;
 	#n;
@@ -180,16 +274,16 @@ var p = class {
 	#c = null;
 	#l = 0;
 	constructor(e, t = {}) {
-		if (this.#e = e, this.#t = t.resolveRuntime ?? h, this.#n = t.bannerTimeoutMs ?? 15e3, this.#r = t.rewardedTimeoutMs ?? 3e4, !Number.isSafeInteger(this.#n) || this.#n <= 0) throw RangeError("bannerTimeoutMs must be a positive safe integer.");
+		if (this.#e = e, this.#t = t.resolveRuntime ?? b, this.#n = t.bannerTimeoutMs ?? 15e3, this.#r = t.rewardedTimeoutMs ?? 3e4, !Number.isSafeInteger(this.#n) || this.#n <= 0) throw RangeError("bannerTimeoutMs must be a positive safe integer.");
 		if (!Number.isSafeInteger(this.#r) || this.#r <= 0) throw RangeError("rewardedTimeoutMs must be a positive safe integer.");
 	}
 	async showBanner(e) {
 		let t = this.#e.bannerPlacements?.[e.placementId];
 		if (t === void 0 || e.host === null) return "unavailable";
-		if (g(t.adUnitPath), t.sizes.length === 0) throw RangeError("GPT banner requires at least one size.");
+		if (x(t.adUnitPath), t.sizes.length === 0) throw RangeError("GPT banner requires at least one size.");
 		let n = this.#i.get(e.placementId);
 		return n === void 0 ? this.#g((n) => {
-			let r = _(e.host, () => `idle-game-ad-${++this.#l}`), i = n.defineSlot(t.adUnitPath, t.sizes, r);
+			let r = S(e.host, () => `idle-game-ad-${++this.#l}`), i = n.defineSlot(t.adUnitPath, t.sizes, r);
 			if (i === null) return Promise.resolve("unavailable");
 			i.addService(n.pubads()), this.#u(n), this.#h(n);
 			let a, o = new Promise((e) => {
@@ -215,7 +309,7 @@ var p = class {
 	}
 	async showRewarded(e) {
 		let t = this.#e.rewardedOffers?.[e.offerId];
-		return t === void 0 || this.#c !== null ? { status: "unavailable" } : (g(t.adUnitPath), this.#g((e) => {
+		return t === void 0 || this.#c !== null ? { status: "unavailable" } : (x(t.adUnitPath), this.#g((e) => {
 			let n = e.defineOutOfPageSlot(t.adUnitPath, e.enums.OutOfPageFormat.REWARDED);
 			if (n === null) return Promise.resolve({ status: "unavailable" });
 			n.addService(e.pubads()), this.#u(e), this.#h(e);
@@ -290,28 +384,28 @@ var p = class {
 		}));
 	}
 };
-function m(e, t = {}) {
+function y(e, t = {}) {
 	if (typeof window > "u") return null;
-	let n = new p(e, t);
+	let n = new v(e, t);
 	return window.__IDLE_GAME_AD_PROVIDER__ = n, n;
 }
-function h() {
+function b() {
 	if (!(typeof window > "u")) return window.googletag;
 }
-function g(e) {
+function x(e) {
 	if (e.trim().length === 0) throw RangeError("GPT adUnitPath must not be empty.");
 }
-function _(e, t) {
+function S(e, t) {
 	if (e.id.length > 0) return e.id;
 	let n = t();
 	return e.id = n, n;
 }
 //#endregion
 //#region src/platform/web/public-asset-url.ts
-function v(e, t = "/") {
+function C(e, t = "/") {
 	if (/^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(e)) return e;
 	let n = e.replace(/^\/+/, "");
 	return `${t.length === 0 ? "./" : t.endsWith("/") ? t : `${t}/`}${n}`;
 }
 //#endregion
-export { e as BrowserAdAdapter, o as FakeAdAdapter, p as GooglePublisherTagProvider, c as IndexedDbProfileRepository, m as installGooglePublisherTagProvider, f as registerServiceWorker, l as requestPersistentStorage, v as resolvePublicAssetUrl, d as resolveServiceWorkerScriptUrl };
+export { e as BrowserAdAdapter, o as BrowserNonConsumablePurchaseProvider, u as FakeAdAdapter, d as FakeNonConsumablePurchaseProvider, v as GooglePublisherTagProvider, p as IndexedDbProfileRepository, y as installGooglePublisherTagProvider, _ as registerServiceWorker, m as requestPersistentStorage, C as resolvePublicAssetUrl, g as resolveServiceWorkerScriptUrl };
