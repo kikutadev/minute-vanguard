@@ -58,7 +58,7 @@ import {
   titleRules,
   type TitleEffectFamily,
 } from '../definitions/title-definitions';
-import { duplicateSnackRewardByRarity, gachaPetDefinitions } from '../definitions/gacha-pet-definitions';
+import { duplicateSnackRewardByRarity, gachaPetDefinitions, type GachaPetSpecialEffect } from '../definitions/gacha-pet-definitions';
 import type {
   BattleResult,
   BattleTurn,
@@ -493,7 +493,7 @@ export function ownedPetIds(state: MinuteVanguardState): readonly string[] {
   return [...state.gameData.ownedPetEnemyIds, ...state.gameData.ownedGachaPetIds];
 }
 
-export function petCatalogEntry(petId: string): Readonly<{ id: string; displayName: string; glyph: string; rarity: MonsterRarity; attackType: 'physical' | 'magic'; source: 'capture' | 'gacha' }> | null {
+export function petCatalogEntry(petId: string): Readonly<{ id: string; displayName: string; glyph: string; rarity: MonsterRarity; attackType: 'physical' | 'magic'; source: 'capture' | 'gacha'; specialEffect?: GachaPetSpecialEffect }> | null {
   const enemy = enemies.find((candidate) => candidate.id === petId);
   if (enemy !== undefined) return { id: enemy.id, displayName: enemy.displayName, glyph: enemy.glyph, rarity: enemy.rarity, attackType: enemy.attackType, source: 'capture' };
   const gacha = gachaPetDefinitions.find((candidate) => candidate.id === petId);
@@ -544,6 +544,24 @@ export function petCaptureEquipmentMultiplier(state: MinuteVanguardState): numbe
 
 export function petSnackDropChance(mutated: boolean): number {
   return mutated ? 0.15 : 0.05;
+}
+
+export function activePetGuardRate(state: MinuteVanguardState): number {
+  const guards = state.gameData.activePetEnemyIds.filter((petId) => petCatalogEntry(petId)?.specialEffect === 'guard').length;
+  return Math.min(0.16, guards * 0.08);
+}
+
+export function activePetRegenRate(state: MinuteVanguardState): number {
+  const healers = state.gameData.activePetEnemyIds.filter((petId) => petCatalogEntry(petId)?.specialEffect === 'regen').length;
+  return Math.min(0.04, healers * 0.02);
+}
+
+export function petTripleStrikeMultiplier(effect: GachaPetSpecialEffect | undefined, roll: number): number {
+  return effect === 'tripleStrike' && roll < 0.15 ? 3 : 1;
+}
+
+export function petFollowupDamageMultiplier(effect: GachaPetSpecialEffect | undefined): number {
+  return effect === 'followup' ? 0.35 : 0;
 }
 
 export function petSnackAutoRemainingSec(state: MinuteVanguardState): number {
@@ -739,11 +757,27 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
         const trainingMultiplier = 1 + trainingLevel * 0.02;
         const tamerMultiplier = job.id === 'job.tamer' ? 1.4 : 1;
         const secondPetMultiplier = petIndex === 0 ? 1 : 0.6;
-        const hit = Math.max(1, Math.round(sourcePower * 0.25 * trainingMultiplier * tamerMultiplier * petTitleMultiplier * secondPetMultiplier));
+        let hit = Math.max(1, Math.round(sourcePower * 0.25 * trainingMultiplier * tamerMultiplier * petTitleMultiplier * secondPetMultiplier));
+        if (pet.specialEffect === 'tripleStrike') {
+          const petSkillRoll = draw(nextState, ids.rng.combat); nextState = petSkillRoll.state;
+          const tripleMultiplier = petTripleStrikeMultiplier(pet.specialEffect, petSkillRoll.value);
+          if (tripleMultiplier > 1) {
+            hit *= tripleMultiplier;
+            logs.push(`${pet.displayName}の会心本能！ 3倍の一撃！`);
+          }
+        }
         petDamage += hit;
         enemyHp = Math.max(0, enemyHp - hit);
         logs.push(`${pet.displayName}の追撃！ ${hit} ダメージ！`);
         if (enemyHp <= 0) break;
+        const followupMultiplier = petFollowupDamageMultiplier(pet.specialEffect);
+        if (followupMultiplier > 0) {
+          const followup = Math.max(1, Math.round(hit * followupMultiplier));
+          petDamage += followup;
+          enemyHp = Math.max(0, enemyHp - followup);
+          logs.push(`${pet.displayName}がもう一度飛び込む！ ${followup} ダメージ！`);
+          if (enemyHp <= 0) break;
+        }
       }
     }
 
@@ -774,7 +808,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       } else {
         const enemyPower = (enemy.attackType === 'magic' ? enemy.magicAttack : enemy.attack) * mutationStat;
         const guard = enemy.attackType === 'magic' ? stats.magicDefense : stats.defense;
-        enemyDamage = Math.max(1, Math.round(damage(enemyPower * (enemySpecial ? 1.75 : 1), guard, 1, 1) * (1 - Math.min(0.75, titleEffectValue(nextState, 'damageReduction')))));
+        enemyDamage = Math.max(1, Math.round(damage(enemyPower * (enemySpecial ? 1.75 : 1), guard, 1, 1) * (1 - Math.min(0.75, titleEffectValue(nextState, 'damageReduction'))) * (1 - activePetGuardRate(nextState))));
         playerHp = Math.max(0, playerHp - enemyDamage);
         logs.push(`${enemy.displayName}${enemySpecial ? 'の必殺技' : 'の攻撃'}！ ${enemyDamage} ダメージ！`);
         if (job.id === 'job.wraith') wraithMultiplier = Math.max(0.5, wraithMultiplier / 3);
@@ -785,6 +819,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     if (playerHp > 0 && job.id === 'job.priest') heal += Math.max(1, Math.floor(maxHp * 0.05));
     if (playerHp > 0) heal += Math.max(0, Math.floor(maxHp * orbEffectValue(nextState, 'regen') / 100));
     if (playerHp > 0) heal += Math.max(0, Math.floor(maxHp * titleEffectValue(nextState, 'regen')));
+    if (playerHp > 0) heal += Math.max(0, Math.floor(maxHp * activePetRegenRate(nextState)));
     if (heal > 0) {
       const before = playerHp;
       playerHp = Math.min(maxHp, playerHp + heal);

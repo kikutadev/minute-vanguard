@@ -1,11 +1,14 @@
 import type { MonsterRarity } from './types';
 
+export type GachaPetSpecialEffect = 'regen' | 'guard' | 'followup' | 'tripleStrike';
+
 export type GachaPetDefinition = Readonly<{
   id: string;
   displayName: string;
   glyph: string;
   rarity: MonsterRarity;
   attackType: 'physical' | 'magic';
+  specialEffect?: GachaPetSpecialEffect;
 }>;
 
 const pet = (
@@ -14,7 +17,8 @@ const pet = (
   glyph: string,
   rarity: MonsterRarity,
   attackType: 'physical' | 'magic',
-): GachaPetDefinition => ({ id: `gacha-pet.${id}`, displayName, glyph, rarity, attackType });
+  specialEffect?: GachaPetSpecialEffect,
+): GachaPetDefinition => ({ id: `gacha-pet.${id}`, displayName, glyph, rarity, attackType, ...(specialEffect === undefined ? {} : { specialEffect }) });
 
 export const gachaPetDefinitions: readonly GachaPetDefinition[] = [
   pet('second_mouse', '秒針ネズミ', '🐭', 'common', 'physical'),
@@ -52,26 +56,26 @@ export const gachaPetDefinitions: readonly GachaPetDefinition[] = [
   pet('printer_octopus', '複合機タコ', '🐙', 'rare', 'magic'),
   pet('night_train', '終電の仔馬', '🐎', 'rare', 'physical'),
 
-  pet('neon_griffin', 'ネオングリフォン', '🦅', 'epic', 'magic'),
-  pet('overtime_oni', '残業鬼童', '👹', 'epic', 'physical'),
-  pet('cloud_whale', 'クラウド鯨', '🐋', 'epic', 'magic'),
-  pet('invoice_tiger', '請求書虎', '🐅', 'epic', 'physical'),
-  pet('backup_phoenix', 'バックアップ不死鳥', '🔥', 'epic', 'magic'),
-  pet('meeting_hydra', '会議ヒュドラ', '🐲', 'epic', 'physical'),
-  pet('pixel_kirin', '画素麒麟', '🦄', 'epic', 'magic'),
-  pet('deadline_knight', '締切騎獣', '🐎', 'epic', 'physical'),
+  pet('neon_griffin', 'ネオングリフォン', '🦅', 'epic', 'magic', 'regen'),
+  pet('overtime_oni', '残業鬼童', '👹', 'epic', 'physical', 'guard'),
+  pet('cloud_whale', 'クラウド鯨', '🐋', 'epic', 'magic', 'followup'),
+  pet('invoice_tiger', '請求書虎', '🐅', 'epic', 'physical', 'tripleStrike'),
+  pet('backup_phoenix', 'バックアップ不死鳥', '🔥', 'epic', 'magic', 'regen'),
+  pet('meeting_hydra', '会議ヒュドラ', '🐲', 'epic', 'physical', 'guard'),
+  pet('pixel_kirin', '画素麒麟', '🦄', 'epic', 'magic', 'followup'),
+  pet('deadline_knight', '締切騎獣', '🐎', 'epic', 'physical', 'tripleStrike'),
 
-  pet('midnight_dragon', '零時竜', '🐉', 'legendary', 'magic'),
-  pet('archive_leviathan', '大書庫リヴァイアサン', '🐋', 'legendary', 'magic'),
-  pet('golden_week_beast', '黄金週獣', '🦁', 'legendary', 'physical'),
-  pet('silent_server', '静寂サーバー獣', '🖥️', 'legendary', 'magic'),
-  pet('infinite_task', '無限タスク獣', '♾️', 'legendary', 'physical'),
-  pet('last_train_roc', '最終便ロック鳥', '🦅', 'legendary', 'physical'),
+  pet('midnight_dragon', '零時竜', '🐉', 'legendary', 'magic', 'tripleStrike'),
+  pet('archive_leviathan', '大書庫リヴァイアサン', '🐋', 'legendary', 'magic', 'regen'),
+  pet('golden_week_beast', '黄金週獣', '🦁', 'legendary', 'physical', 'followup'),
+  pet('silent_server', '静寂サーバー獣', '🖥️', 'legendary', 'magic', 'guard'),
+  pet('infinite_task', '無限タスク獣', '♾️', 'legendary', 'physical', 'tripleStrike'),
+  pet('last_train_roc', '最終便ロック鳥', '🦅', 'legendary', 'physical', 'followup'),
 
-  pet('month_end_titan', '月末巨神', '🗿', 'boss', 'physical'),
-  pet('zero_inbox_seraph', '受信箱ゼロの熾天使', '😇', 'boss', 'magic'),
-  pet('eternal_monday', '永劫月曜獣', '🌞', 'boss', 'physical'),
-  pet('master_clock', '万象時計王', '🕰️', 'boss', 'magic'),
+  pet('month_end_titan', '月末巨神', '🗿', 'boss', 'physical', 'guard'),
+  pet('zero_inbox_seraph', '受信箱ゼロの熾天使', '😇', 'boss', 'magic', 'regen'),
+  pet('eternal_monday', '永劫月曜獣', '🌞', 'boss', 'physical', 'followup'),
+  pet('master_clock', '万象時計王', '🕰️', 'boss', 'magic', 'tripleStrike'),
 ] as const;
 
 export const duplicateSnackRewardByRarity: Readonly<Record<MonsterRarity, number>> = {

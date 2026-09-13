@@ -762,7 +762,7 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId:
       const cap = petTrainingCap(pet.id) ?? level;
       return <article key={pet.id} className={`pet-row ${active ? 'active' : ''}`}>
         <span className="pet-glyph">{pet.glyph}</span>
-        <div className="pet-row-main"><strong>{pet.displayName}</strong><small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}${mutatedCaptured ? ' · ★変異捕獲' : ''}`}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
+        <div className="pet-row-main"><strong>{pet.displayName}</strong><small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}${mutatedCaptured ? ' · ★変異捕獲' : ''}`}{pet.specialEffect ? ` · ${petSpecialEffectLabel(pet.specialEffect)}` : ''}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
         <div className="pet-row-actions"><button className={active ? 'active' : ''} onClick={() => props.onToggle(pet.id, !active)}>{active ? '参戦中' : '編成'}</button><button disabled={props.state.gameData.petSnacks <= 0 || level >= cap} onClick={() => props.onTrain(pet.id)}>{level >= cap ? 'MAX' : '🍖 育成'}</button></div>
       </article>;
     })}</div>}
@@ -992,6 +992,13 @@ function formatTitleEffect(definition: MinuteVanguardTitleDefinition, level: num
     return `${definition.description} ×${value.toFixed(2)}`;
   }
   return `${definition.description} ${(value * 100).toFixed(value * 100 < 10 ? 1 : 0)}%`;
+}
+
+function petSpecialEffectLabel(effect: 'regen' | 'guard' | 'followup' | 'tripleStrike'): string {
+  if (effect === 'regen') return '毎ターン回復';
+  if (effect === 'guard') return '被ダメ軽減';
+  if (effect === 'followup') return '追加追撃';
+  return '3倍の一撃';
 }
 
 function formatRemainingTime(totalSec: number): string {
