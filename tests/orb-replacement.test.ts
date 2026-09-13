@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { EquipmentData, MinuteVanguardState, StatValues } from '../definitions/types';
 import { ids } from '../definitions/game-definitions';
-import { createInitialState, fight, orbInventoryCount, resolveOrbReplacement } from '../plugin/engine';
+import { createInitialState, fight, fightSimple, orbInventoryCount, resolveOrbReplacement } from '../plugin/engine';
 
 const stats: StatValues = { hp: 5, attack: 2, defense: 1, magicAttack: 1, magicDefense: 0, luck: 1 };
 const orbData = (overrides: Partial<EquipmentData> = {}): EquipmentData => ({
@@ -90,4 +90,28 @@ describe('orb full-inventory replacement', () => {
     expect(found.gameData.pendingOrbReplacementItemId).not.toBeNull();
     expect(orbInventoryCount(found)).toBe(2);
   });
+
+  it('simple battle auto-discards a newly dropped orb when capacity is full', () => {
+    let found: MinuteVanguardState | null = null;
+    for (let seed = 1; seed <= 800 && found === null; seed += 1) {
+      const initial = createInitialState(0, seed);
+      const filled: MinuteVanguardState = {
+        ...initial,
+        gameData: {
+          ...initial.gameData,
+          orbCapacity: 1,
+          inventory: { 'item.orb:old': { instanceId: 'item.orb:old', definitionId: ids.item.orb, quantity: 1, data: orbData() } },
+          player: { ...initial.gameData.player, currentHp: 5_000, baseStats: { hp: 5_000, attack: 1_000, defense: 1_000, magicAttack: 1_000, magicDefense: 1_000, luck: 10 } },
+        },
+      };
+      const battle = fightSimple(filled);
+      if (battle.accepted && battle.state.gameData.lastBattle?.droppedOrbInstanceId !== null) found = battle.state;
+    }
+    expect(found).not.toBeNull();
+    if (found === null) return;
+    expect(found.gameData.pendingOrbReplacementItemId).toBeNull();
+    expect(orbInventoryCount(found)).toBe(1);
+    expect(found.gameData.inventory['item.orb:old']).toBeDefined();
+  });
+
 });

@@ -145,6 +145,8 @@ The battle screen also keeps a local battle history. Only lightweight summaries 
 
 Battle presentation uses 13 original scene identities, one per monster level. The pre-battle card and resolved battle share the same scene identity, while a local-device morning/day/evening/night overlay changes atmosphere without affecting simulation or save data. These are CSS-authored Minute Vanguard scenes rather than copied reference artwork.
 
+A full-screen Simple Battle mode is available from the monster-level row for low-distraction play. It shows only HP/EXP/Gold, the selected hunting level, cooldown and chronological one-line results. It never opens the animated result modal. If an orb drops while orb storage is full, the new orb is discarded immediately instead of opening replacement UI; defeat-Gold recovery is intentionally unavailable inside this mode.
+
 The solo collection also includes 104 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
 
 ## Pets

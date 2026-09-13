@@ -69,6 +69,7 @@
 - クールダウン中のモンスター叩き: 6マス、勇者/空マスは-3、報酬なし、自己ベストは端末ローカルのみ。
 - 戦闘ログ: 自分のログは端末ローカル、表示件数10/30/50を端末ごとに選択。Minute Vanguardは最大50件の軽量要約のみ保存。
 - 戦闘背景: 参照側はモンスターレベル別＋朝/昼/夕/夜。公開確認できる更新時点はLv.1〜12。Minute Vanguardは独自13狩場へ拡張し、画像コピーなしのCSSシーンとして戦闘前/結果を統一。
+- 簡易戦闘: 結果モーダルなし・HP/EXP/Gold常時表示・1行ログ。オーブ満杯時の新ドロップは自動破棄、敗北Gold回収は通常画面のみ。
 - 称号（実績）: 参照側は300種以上・1つ選択して名前上に表示。Minute Vanguardは現在104種を実条件付きで実装し、Kit Achievement stateへ永続化。
 - Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.

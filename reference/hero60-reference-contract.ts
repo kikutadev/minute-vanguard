@@ -36,6 +36,7 @@ export const hero60Reference = {
   cooldownPastime: { cells: 6, wrongTapPenalty: 3, grantsRewards: false, localBestOnly: true },
   battleLog: { localDisplayOptions: [10, 30, 50] as const, localDeviceSpecific: true },
   battleVisuals: { levelSpecificBackgrounds: true, documentedMonsterLevels: 12, dayparts: 4 },
+  simpleBattle: { resultModal: false, fullOrbDropsDiscarded: true, defeatGoldRecoveryAvailable: false },
   achievementTitles: { referenceCountAtLeast: 300, selectableDisplaySlots: 1 },
   goldBags: {
     gemCosts: [30, 100, 300] as const,

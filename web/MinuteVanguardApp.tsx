@@ -56,6 +56,7 @@ import {
   equipOwnedTitle,
   expRequiredForNextLevel,
   fight,
+  fightSimple,
   freeCooldownSkipsRemaining,
   gemBalance,
   goldBalance,
@@ -138,6 +139,7 @@ export function MinuteVanguardApp() {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [battleResult, setBattleResult] = useState<BattleResult | null>(null);
   const [battleStep, setBattleStep] = useState(0);
+  const [simpleBattleOpen, setSimpleBattleOpen] = useState(false);
   const stateRef = useRef<MinuteVanguardState | null>(null);
   const noticeSequenceRef = useRef(1);
   const { current: noticePresentation, enqueue: enqueueNotice } = usePresentationQueue<NoticePresentation>(() => 2_400);
@@ -225,6 +227,12 @@ export function MinuteVanguardApp() {
     commit(result.state, `${amount.toLocaleString()}G を回収しました`);
   };
 
+  const onSimpleFight = () => {
+    const result = fightSimple(state);
+    if (!result.accepted) return;
+    commit(result.state);
+  };
+
   return (
     <div className="game-viewport">
       <header className="global-header">
@@ -261,7 +269,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onTapGame={() => setModal('tap-game')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
+        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onSimpleBattle={() => setSimpleBattleOpen(true)} onTapGame={() => setModal('tap-game')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -357,6 +365,7 @@ export function MinuteVanguardApp() {
         <NavButton icon="♛" label="ランキング" active={tab === 'ranking'} onClick={() => setTab('ranking')} />
       </nav>
 
+      {simpleBattleOpen && <SimpleBattleView state={state} onFight={onSimpleFight} onClose={() => setSimpleBattleOpen(false)} />}
       {battleResult !== null && <BattleResultModal result={battleResult} step={battleStep} jobName={job.displayName} recoveryAmount={state.gameData.recoverableDefeatGold} onRecover={onRecoverDefeatGold} onClose={() => setBattleResult(null)} />}
       {battleResult === null && state.gameData.pendingOrbReplacementItemId !== null && <OrbReplacementModal state={state} onResolve={(discardItemId) => {
         const result = resolveOrbReplacement(state, discardItemId);
@@ -417,7 +426,7 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onTapGame: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -427,7 +436,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   return <section className="battle-page page-section">
     <div className="section-tabs"><button className="active">⚔ モンスター戦</button><button disabled>🏆 チャンプ戦</button></div>
     <div className="battle-control-card">
-      <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><span className="online-dot">● 1人プレイ</span></div>
+      <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><button className="simple-battle-open" onClick={props.onSimpleBattle}>簡易</button><span className="online-dot">● 1人プレイ</span></div>
       <div className={`battle-illustration ${scene.className}`} data-scene={scene.label}>
         <div className="battle-sigil">⚔</div>
         <p>{state.gameData.victories < 10 ? `初心者ボーナス：あと ${10 - state.gameData.victories}体は5秒待機` : `通常待機 ${effectiveBattleCooldownSec(state)}秒`}</p>
@@ -468,6 +477,33 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
     </div>
     <BattleHistory state={state} />
   </section>;
+}
+
+function SimpleBattleView(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onClose: () => void }>) {
+  const [startedAtBattle] = useState(props.state.gameData.totalBattles);
+  const cooldown = battleCooldown(props.state);
+  const stats = playerCombatStats(props.state);
+  const expNeeded = expRequiredForNextLevel(props.state.gameData.player.level);
+  const entries = props.state.gameData.battleHistory.filter((entry) => entry.battleIndex > startedAtBattle).slice().reverse();
+  return <div className="simple-battle-overlay">
+    <header><div><strong>簡易戦闘</strong><small>無演出・モンスター戦のみ</small></div><button onClick={props.onClose}>終了</button></header>
+    <div className="simple-status">
+      <span>HP <b>{props.state.gameData.player.currentHp.toLocaleString()} / {stats.hp.toLocaleString()}</b></span>
+      <span>EXP <b>{props.state.gameData.player.exp.toLocaleString()} / {expNeeded.toLocaleString()}</b></span>
+      <span>GOLD <b>{Math.floor(goldBalance(props.state)).toLocaleString()}</b></span>
+      <span>狩場 <b>Lv.{props.state.gameData.selectedMonsterLevel}</b></span>
+    </div>
+    <button className="simple-fight-button" onClick={props.onFight} disabled={!cooldown.ready}>{cooldown.ready ? '戦闘する' : `${cooldown.remainingSec}秒`}</button>
+    <p className="simple-warning">オーブ枠が満杯のとき、新しいオーブは破棄されます。敗北Gold回収は通常画面でのみ利用できます。</p>
+    <div className="simple-log">
+      {entries.length === 0 ? <p>この画面で戦うと、ここに1行ずつ記録されます。</p> : entries.map((entry) => <div key={entry.battleIndex}>
+        <time>{new Date(entry.resolvedAtMs).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</time>
+        <span>Lv.{entry.monsterLevel} {entry.enemyName}</span>
+        <b>{entry.outcome === 'victory' ? '勝' : entry.outcome === 'draw' ? '分' : '敗'}</b>
+        <em>{entry.goldDelta >= 0 ? '+' : ''}{entry.goldDelta}G / +{entry.expGained}EXP</em>
+      </div>)}
+    </div>
+  </div>;
 }
 
 function BattleHistory({ state }: Readonly<{ state: MinuteVanguardState }>) {

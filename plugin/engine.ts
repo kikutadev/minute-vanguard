@@ -1246,6 +1246,16 @@ function battleResultToLogEntry(result: BattleResult, resolvedAtMs: number): Bat
   };
 }
 
+export function fightSimple(state: MinuteVanguardState): CommandResult<MinuteVanguardState, 'cooldown-active' | 'orb-replacement-required'> {
+  const result = fight(state);
+  if (!result.accepted) return result;
+  const pendingId = result.state.gameData.pendingOrbReplacementItemId;
+  if (pendingId === null) return result;
+  const resolved = resolveOrbReplacement(result.state, pendingId);
+  if (!resolved.accepted) return result;
+  return accept(resolved.state, [...result.events, ...resolved.events]);
+}
+
 export function buyEquipment(
   state: MinuteVanguardState,
   itemDefinitionId: string,
