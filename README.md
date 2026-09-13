@@ -90,3 +90,8 @@ pnpm dev --host 127.0.0.1 --port 4177
 ```
 
 Open the Ranking tab and the three seeded public adventurers should be loaded through `Vite /api -> Worker -> D1`. Wrangler state lives under `cloudflare/.wrangler/` and is ignored by git. GitHub Pages does not ship or depend on that database; only `dist/` is deployed and the game falls back to solo mode there unless a production API URL is intentionally configured later.
+
+
+## GitHub Pages deployment
+
+GitHub Actions is intentionally not used. Run `pnpm deploy:pages` locally after committing changes. It runs the local checks/build and force-publishes only `dist/` to the artifact-only `gh-pages` branch.
