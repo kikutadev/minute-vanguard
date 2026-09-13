@@ -5,6 +5,7 @@ import type {
   LoadoutDefinition,
 } from 'idle-game-kit';
 import type { EnemyDefinition, JobDefinition, MonsterRarity, OrbRank, StatValues } from './types';
+import { highLevelEnemies } from './high-level-enemies';
 
 export const definitionVersion = '0.2.0';
 
@@ -197,6 +198,7 @@ export const enemies: readonly EnemyDefinition[] = [
   ...CORE_ENEMIES,
   ...buildAdditionalEnemies(1, LEVEL_1_ADDITIONAL_SEEDS),
   ...buildAdditionalEnemies(2, LEVEL_2_ADDITIONAL_SEEDS),
+  ...highLevelEnemies,
 ];
 export const rarityOrder: readonly MonsterRarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary', 'boss'];
 export const orbRanks: readonly OrbRank[] = ['F', 'E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];

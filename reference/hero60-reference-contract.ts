@@ -32,6 +32,7 @@ export const hero60Reference = {
     jackpot: { x2: 0.08, x3: 0.03, x5: 0.01, x10: 0.003 },
     permanentStatChance: 0.01,
   },
+  monsters: { levels: 13, perLevel: 50, total: 650, sequentialUnlock: true },
   goldBags: {
     gemCosts: [30, 100, 300] as const,
     historyWins: 10,
@@ -42,6 +43,7 @@ export const hero60Reference = {
     durations: [
       { durationSec: 180, gemCost: 30 },
       { durationSec: 600, gemCost: 100 },
+      { durationSec: 1800, gemCost: 300 },
     ] as const,
     rushCooldownSec: 10,
     expMultiplier: 2,

@@ -88,6 +88,7 @@ const BASE_STATS: StatValues = { hp: 100, attack: 12, defense: 8, magicAttack: 1
 const TIME_BOOST_OPTIONS = [
   { durationSec: 180, gemCost: 30 },
   { durationSec: 600, gemCost: 100 },
+  { durationSec: 1800, gemCost: 300 },
 ] as const;
 const PET_SNACK_AUTO_INTERVAL_SEC = 60 * 60;
 const PET_SNACK_AUTO_CAP = 100;
@@ -224,6 +225,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       lastDefeatedEnemyId: null,
       consecutiveDefeats: 0,
       recentVictoryMonsterLevels: [],
+      selectedMonsterLevel: 1,
       nextItemSequence: 1,
       lastBattle: null,
       rareGuaranteeActive: false,
@@ -278,6 +280,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
         recentVictoryMonsterLevels: state.gameData.recentVictoryMonsterLevels ?? [],
+        selectedMonsterLevel: Math.min(state.gameData.selectedMonsterLevel ?? 1, unlockedMonsterLevelFromKills(state.gameData.killCounts)),
         mutatedPetEnemyIds: state.gameData.mutatedPetEnemyIds ?? [],
         ownedGachaPetIds: state.gameData.ownedGachaPetIds ?? [],
         player: { ...state.gameData.player, petCount: (state.gameData.ownedPetEnemyIds ?? []).length + (state.gameData.ownedGachaPetIds ?? []).length },
@@ -357,7 +360,7 @@ export function effectiveBattleCooldownSec(state: MinuteVanguardState): number {
 export function purchaseTimeBoost(
   state: MinuteVanguardState,
   kind: TimeBoostKind,
-  durationSec: 180 | 600,
+  durationSec: 180 | 600 | 1800,
 ): CommandResult<MinuteVanguardState, 'unknown-duration' | 'already-active' | 'insufficient-gems' | 'beginner-fast-cooldown'> {
   const option = TIME_BOOST_OPTIONS.find((candidate) => candidate.durationSec === durationSec);
   if (option === undefined) return reject(state, 'unknown-duration');
@@ -1822,15 +1825,41 @@ export function setActivePet(
   return accept(nextState, [event(nextState, active ? 'petActivated' : 'petDeactivated', enemyId)]);
 }
 
+function unlockedMonsterLevelFromKills(killCounts: Readonly<Record<string, number>>): number {
+  let unlocked = 1;
+  for (let level = 2; level <= 13; level += 1) {
+    const previousCleared = enemies.some((enemy) => enemy.monsterLevel === level - 1 && (killCounts[enemy.id] ?? 0) > 0);
+    if (!previousCleared) break;
+    unlocked = level;
+  }
+  return unlocked;
+}
+
 function normalCooldownSec(state: MinuteVanguardState): number {
   if (isTimeBoostActive(state, 'rush')) return 10;
   const base = state.gameData.permanentUpgrades.cooldownReduction ? 50 : 60;
   return Math.max(45, base - Math.min(5, Math.max(0, Math.round(orbEffectValue(state, 'cooldown')))));
 }
 
+export function unlockedMonsterLevel(state: MinuteVanguardState): number {
+  return unlockedMonsterLevelFromKills(state.gameData.killCounts);
+}
+
+export function setMonsterLevel(
+  state: MinuteVanguardState,
+  level: number,
+): CommandResult<MinuteVanguardState, 'invalid-level' | 'level-locked'> {
+  const normalized = Math.floor(level);
+  if (normalized < 1 || normalized > 13) return reject(state, 'invalid-level');
+  if (normalized > unlockedMonsterLevel(state)) return reject(state, 'level-locked');
+  if (normalized === state.gameData.selectedMonsterLevel) return accept(state, []);
+  const nextState: MinuteVanguardState = { ...state, gameData: { ...state.gameData, selectedMonsterLevel: normalized } };
+  return accept(nextState, [event(nextState, 'monsterLevelSelected', `${normalized}`, { level: normalized })]);
+}
+
 function selectEnemy(state: MinuteVanguardState): Readonly<{ state: MinuteVanguardState; enemy: EnemyDefinition }> {
-  const maxMonsterLevel = state.gameData.player.level >= 30 ? 2 : 1;
-  const levelPool = enemies.filter((enemy) => enemy.monsterLevel <= maxMonsterLevel);
+  const selectedLevel = Math.min(state.gameData.selectedMonsterLevel, unlockedMonsterLevel(state));
+  const levelPool = enemies.filter((enemy) => enemy.monsterLevel === selectedLevel);
   if (state.gameData.rareGuaranteeActive) {
     const roll = draw(state, ids.rng.encounter);
     const rarity: MonsterRarity = roll.value < 0.67 ? 'rare' : roll.value < 0.91 ? 'epic' : roll.value < 0.977 ? 'legendary' : 'boss';

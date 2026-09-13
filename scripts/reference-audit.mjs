@@ -12,6 +12,8 @@ const checks = [
   ['guide', 'mutation.captureBonus', ['変異種を捕獲すると成長ボーナス', '+ 1 %', '合わせて+2%']],
   ['guide', 'progression.stats', ['HP / ATK / DEF / MAT / MDF / LUK']],
   ['guide', 'progression.jobChange', ['Lv.30', '転職']],
+  ['guide', 'monsters.roster', ['Lv1〜13', '全650体']],
+  ['patchnotes', 'monsters.sequentialUnlock', ['Lv9モンスターを倒すとLv10', 'Lv10モンスターを倒すと挑戦', 'Lv11モンスターを倒すと挑戦', 'Lv12モンスターを倒すと挑戦']],
   ['guide', 'goldBags.core', ['小銭袋', '30', 'ずだ袋', '100', '大金庫', '300', '直近10戦', '2回以上']],
   ['guide', 'progression.jobCurrent', ['301回目 Lv.210', '1〜200回目 +5%', '201〜300回目 +4%', '301回目以降はずっと +3%', '全装備を外して戦う', '杖を持つと自分の攻撃も魔法になる']],
   ['patchnotes', 'progression.ninjaCurrent', ['最大15%', '通常戦闘（最大20ターン）で倒しきれるか']],
@@ -34,7 +36,7 @@ const checks = [
   ['patchnotes', 'ui.bottomTabs', ['ショップ・装備・バトル・コレクション・ランキング']],
   ['patchnotes', 'ui.battleFloaters', ['デイリーミッション・転職・ミミック銀行']],
   ['patchnotes', 'beginner.noSkip', ['クールダウンが5秒のあいだ', 'ジェムでスキップ', 'ラッシュタイム']],
-  ['guide', 'timeBoosts.duration', ['3分', '30', '10分', '100']],
+  ['patchnotes', 'timeBoosts.duration', ['3分版', 'ジェム30個', '10分', '100個', '30分版', '300ジェム']],
   ['patchnotes', 'timeBoosts.effects', ['ラッシュタイム', 'クールダウンが10秒', 'EXPブーストタイム', '経験値2倍', 'ゴールドブーストタイム', 'ゴールド2倍']],
 ];
 

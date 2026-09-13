@@ -135,7 +135,7 @@ Job change resets Level/EXP/base growth while retaining owned equipment, Gem, Go
 
 ## Monster roster / codex
 
-The current solo build has 100 original monsters: 50 in Monster Lv.1 and 50 in Monster Lv.2. Existing legacy IDs are retained for save compatibility. Each level contains every rarity, while encounter rarity is rolled separately so roster size does not make rare/boss enemies artificially common. During the first ten successful defeats, natural encounters are restricted to Common/Uncommon unless the player explicitly activates Rare Guarantee.
+The current solo build has 650 original monsters: 50 in each Monster Lv.1–13. Existing legacy Lv.1/Lv.2 IDs are retained for save compatibility. Each level contains every rarity, while encounter rarity is rolled separately so roster size does not make rare/boss enemies artificially common. The player explicitly selects one unlocked monster level; defeating any monster in the current highest level unlocks the next level. During the first ten successful defeats, natural encounters are restricted to Common/Uncommon unless the player explicitly activates Rare Guarantee.
 
 The codex is split by monster level and records encounters, defeats, mutated encounters, capture eligibility and captured state.
 
@@ -168,6 +168,7 @@ Three local-only timed boosts are implemented in Shop. They use simulation time 
 
 - 3 minutes — 30 Gem
 - 10 minutes — 100 Gem
+- 30 minutes — 300 Gem
 - Rush Time — battle cooldown becomes 10 seconds and Gem cooldown skip is disabled
 - EXP Boost — battle EXP ×2
 - Gold Boost — battle Gold ×2

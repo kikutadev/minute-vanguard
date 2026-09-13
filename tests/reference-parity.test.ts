@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GameNumber } from 'idle-game-kit';
-import { battleCooldownDefinition, ids, jobs, loadoutDefinition, orbRanks } from '../definitions/game-definitions';
+import { battleCooldownDefinition, enemies, ids, jobs, loadoutDefinition, orbRanks } from '../definitions/game-definitions';
 import { hero60Reference } from '../reference/hero60-reference-contract';
 import {
   activateRareGuarantee,
@@ -24,6 +24,14 @@ describe('public reference parity locks', () => {
   it('locks the nine post-adventurer jobs and three equipment slots', () => {
     expect(jobs.filter((job) => job.id !== 'job.adventurer')).toHaveLength(hero60Reference.progression.jobs);
     expect(loadoutDefinition.slots.map((slot) => slot.id)).toEqual(['weapon', 'armor', 'orb']);
+  });
+
+  it('locks the current thirteen-level, 650-monster normal codex density', () => {
+    expect(enemies).toHaveLength(hero60Reference.monsters.total);
+    expect(new Set(enemies.map((enemy) => enemy.monsterLevel)).size).toBe(hero60Reference.monsters.levels);
+    for (let level = 1; level <= hero60Reference.monsters.levels; level += 1) {
+      expect(enemies.filter((enemy) => enemy.monsterLevel === level)).toHaveLength(hero60Reference.monsters.perLevel);
+    }
   });
 
   it('locks the public orb rank order and 10-pull price/guarantee behavior', () => {
@@ -156,6 +164,22 @@ describe('time boost reference parity', () => {
     expect(result.accepted).toBe(false);
     if (result.accepted) return;
     expect(result.reason).toBe('beginner-fast-cooldown');
+  });
+
+  it('accepts every current 3/10/30 minute public duration at its exact Gem price', () => {
+    for (const option of hero60Reference.timeBoosts.durations) {
+      const initial = createInitialState(0, 612 + option.durationSec);
+      const prepared = {
+        ...initial,
+        currencies: { ...initial.currencies, [ids.currency.gem]: GameNumber.from(option.gemCost).serialize() },
+        gameData: { ...initial.gameData, victories: 10 },
+      };
+      const result = purchaseTimeBoost(prepared, 'exp', option.durationSec);
+      expect(result.accepted).toBe(true);
+      if (!result.accepted) continue;
+      expect(GameNumber.deserialize(result.state.currencies[ids.currency.gem]!).toNumber()).toBe(0);
+      expect(timeBoostRemainingSec(result.state, 'exp')).toBe(option.durationSec);
+    }
   });
 
   it('locks 3/10/30 minute pricing and gives Rush a 10-second cooldown without skip', () => {

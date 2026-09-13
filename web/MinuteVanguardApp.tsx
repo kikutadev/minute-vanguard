@@ -82,6 +82,7 @@ import {
   setEquippedTitleLevel,
   timeBoostRemainingSec,
   setActivePet,
+  setMonsterLevel,
   skipBattleCooldown,
   toggleOrbFavorite,
   toggleOrbLock,
@@ -89,6 +90,7 @@ import {
   titleCostLimitForLevel,
   titleEquipCost,
   titleLevel,
+  unlockedMonsterLevel,
   totalPetTrainingLevels,
   trainPet,
   unequipOwnedTitle,
@@ -225,7 +227,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
+        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -374,7 +376,7 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -383,7 +385,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   return <section className="battle-page page-section">
     <div className="section-tabs"><button className="active">⚔ モンスター戦</button><button disabled>🏆 チャンプ戦</button></div>
     <div className="battle-control-card">
-      <div className="monster-level-row"><span>モンスターレベル</span><strong>{state.gameData.player.level >= 30 ? 2 : 1}</strong><span className="online-dot">● 1人プレイ</span></div>
+      <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><span className="online-dot">● 1人プレイ</span></div>
       <div className="battle-illustration">
         <div className="battle-sigil">⚔</div>
         <p>{state.gameData.victories < 10 ? `初心者ボーナス：あと ${10 - state.gameData.victories}体は5秒待機` : `通常待機 ${effectiveBattleCooldownSec(state)}秒`}</p>
@@ -468,7 +470,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
   </section>;
 }
 
-function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600) => void; onBuyTitle: (titleId: string) => void; onBuyGoldBag: (bagId: GoldBagId) => void }>) {
+function ShopView(props: Readonly<{ state: MinuteVanguardState; onBuy: (id: PermanentUpgradeId) => void; onBuyTimeBoost: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void; onBuyTitle: (titleId: string) => void; onBuyGoldBag: (bagId: GoldBagId) => void }>) {
   const [active, setActive] = useState<'permanent' | 'boost' | 'title' | 'gem'>('permanent');
   return <section className="page-section shop-page">
     <h1>ショップ</h1>
@@ -519,7 +521,7 @@ function DailyTitleShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (ti
   </div>;
 }
 
-function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kind: TimeBoostKind, durationSec: 180 | 600) => void }>) {
+function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kind: TimeBoostKind, durationSec: 180 | 600 | 1800) => void }>) {
   const definitions: readonly { kind: TimeBoostKind; icon: string; label: string; description: string }[] = [
     { kind: 'rush', icon: '⚡', label: 'ラッシュタイム', description: '戦闘クールダウンを10秒に短縮。効果中はGemスキップ不可。' },
     { kind: 'exp', icon: '✦', label: 'EXPブースト', description: '戦闘で獲得するEXPを2倍にします。' },
@@ -528,6 +530,7 @@ function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kin
   const durations = [
     { durationSec: 180 as const, label: '3分', gemCost: 30 },
     { durationSec: 600 as const, label: '10分', gemCost: 100 },
+    { durationSec: 1800 as const, label: '30分', gemCost: 300 },
   ];
   return <div className="time-boost-shop">
     <p className="shop-lead">効果中は同じブーストを買い足せません。別種類は同時に使えます。</p>
@@ -543,15 +546,20 @@ function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kin
 }
 
 function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
-  const unlockedMaxLevel = state.gameData.player.level >= 30 ? 2 : 1;
-  const [monsterLevel, setMonsterLevel] = useState<1 | 2>(unlockedMaxLevel);
-  const levelEnemies = enemies.filter((enemy) => enemy.monsterLevel === monsterLevel);
+  const unlockedMaxLevel = unlockedMonsterLevel(state);
+  const [monsterLevel, setCollectionMonsterLevel] = useState<number>(state.gameData.selectedMonsterLevel);
+  const safeLevel = Math.min(monsterLevel, unlockedMaxLevel);
+  const levelEnemies = enemies.filter((enemy) => enemy.monsterLevel === safeLevel);
   const discovered = levelEnemies.filter((enemy) => state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
   const kills = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.killCounts[enemy.id] ?? 0), 0);
   const encounters = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.encounterCounts[enemy.id] ?? 0), 0);
   return <section className="page-section collection-page">
     <h1>コレクション</h1>
-    <div className="monster-level-tabs"><button className={monsterLevel === 1 ? 'active' : ''} onClick={() => setMonsterLevel(1)}>Lv.1 <small>{enemies.filter((e) => e.monsterLevel === 1 && state.gameData.discoveredEnemyIds.includes(e.id)).length}/50</small></button><button className={monsterLevel === 2 ? 'active' : ''} disabled={unlockedMaxLevel < 2} onClick={() => setMonsterLevel(2)}>Lv.2 <small>{unlockedMaxLevel < 2 ? 'Lv.30で解放' : `${enemies.filter((e) => e.monsterLevel === 2 && state.gameData.discoveredEnemyIds.includes(e.id)).length}/50`}</small></button></div>
+    <div className="monster-level-tabs" aria-label="モンスターレベル">{Array.from({ length: 13 }, (_, index) => index + 1).map((level) => {
+      const unlocked = level <= unlockedMaxLevel;
+      const count = enemies.filter((enemy) => enemy.monsterLevel === level && state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
+      return <button key={level} className={safeLevel === level ? 'active' : ''} disabled={!unlocked} onClick={() => setCollectionMonsterLevel(level)}>Lv.{level}<small>{unlocked ? `${count}/50` : '🔒'}</small></button>;
+    })}</div>
     <div className="collection-summary"><div><strong>{discovered}</strong><span>/ 50 発見</span></div><div><strong>{encounters}</strong><span>遭遇</span></div><div><strong>{kills}</strong><span>討伐</span></div></div>
     <div className="encyclopedia-grid">
       {levelEnemies.map((enemy) => {
@@ -560,13 +568,12 @@ function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         const enemyEncounters = state.gameData.encounterCounts[enemy.id] ?? 0;
         const mutatedEncounters = state.gameData.mutatedEncounterCounts[enemy.id] ?? 0;
         const captured = state.gameData.ownedPetEnemyIds.includes(enemy.id);
-        const mutatedCaptured = state.gameData.mutatedPetEnemyIds.includes(enemy.id);
         return <article className={`monster-card ${seen ? '' : 'locked'} ${captured ? 'captured' : ''}`} key={enemy.id}>
           <span className="monster-glyph">{seen ? enemy.glyph : '?'}</span>
           <strong>{seen ? enemy.displayName : '???'}</strong>
           <small>{seen ? enemy.rarity.toUpperCase() : '未発見'}</small>
           {seen && <div className="monster-record"><span>遭遇 {enemyEncounters}</span><span>討伐 {enemyKills}</span>{mutatedEncounters > 0 && <span>変異 {mutatedEncounters}</span>}</div>}
-          {seen && <em>{captured ? `✓ 捕獲済${mutatedCaptured ? ' · ★変異' : ''}` : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
+          {seen && <em>{captured ? '✓ 捕獲済' : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
         </article>;
       })}
     </div>

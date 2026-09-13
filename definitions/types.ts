@@ -193,6 +193,7 @@ export type MinuteVanguardGameData = Readonly<{
   lastDefeatedEnemyId: string | null;
   consecutiveDefeats: number;
   recentVictoryMonsterLevels: readonly number[];
+  selectedMonsterLevel: number;
   nextItemSequence: number;
   lastBattle: BattleResult | null;
   rareGuaranteeActive: boolean;
