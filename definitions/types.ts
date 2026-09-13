@@ -15,6 +15,11 @@ export type TimeBoostKind = 'rush' | 'exp' | 'gold';
 export type TimeBoostState = Readonly<Record<TimeBoostKind, number>>;
 export type TitleShopState = Readonly<{ dayKey: string; offeredTitleIds: readonly string[]; purchasedTitleIds: readonly string[] }>;
 
+export type PetTrainingState = Readonly<{
+  trainingLevel: number;
+  nickname: string | null;
+}>;
+
 export type DailyMissionProgress = Readonly<{
   dayKey: string;
   battles: number;
@@ -186,6 +191,9 @@ export type MinuteVanguardGameData = Readonly<{
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];
   activePetEnemyIds: readonly string[];
+  petTraining: Readonly<Record<string, PetTrainingState>>;
+  petSnacks: number;
+  petSnackRemainderSec: number;
   orbCapacity: number;
   timeBoosts: TimeBoostState;
   titles: ProgressiveTitleCollectionState;

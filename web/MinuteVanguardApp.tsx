@@ -24,6 +24,7 @@ import {
   availableJobs,
   battleCooldown,
   buyEquipment,
+  buyPetSnacks,
   buyPermanentUpgrade,
   buyDailyTitle,
   changeJob,
@@ -56,6 +57,10 @@ import {
   orbInventoryCount,
   orbRerollCost,
   playerCombatStats,
+  petSnackAutoRemainingSec,
+  petTrainingCap,
+  petTrainingGrowthBonusPct,
+  petTrainingLevel,
   purchaseTimeBoost,
   rerollOrbStats,
   resetEquippedTitles,
@@ -69,6 +74,8 @@ import {
   titleCostLimitForLevel,
   titleEquipCost,
   titleLevel,
+  totalPetTrainingLevels,
+  trainPet,
   unequipOwnedTitle,
   upgradeItem,
 } from '../plugin/engine';
@@ -203,6 +210,14 @@ export function MinuteVanguardApp() {
           const result = setActivePet(state, enemyId, active);
           if (!result.accepted) setNotice(result.reason === 'party-full' ? '編成枠がいっぱいです' : 'そのペットは未所持です');
           else commit(result.state, active ? 'ペットを編成しました' : 'ペットを編成から外しました');
+        }} onPetTrain={(enemyId) => {
+          const result = trainPet(state, enemyId);
+          if (!result.accepted) setNotice(result.reason === 'no-snacks' ? 'おやつがありません' : result.reason === 'max-training' ? 'このペットは訓練上限です' : 'ペットを育成できません');
+          else commit(result.state, 'ペットにおやつを与えました');
+        }} onPetBuySnacks={() => {
+          const result = buyPetSnacks(state);
+          if (!result.accepted) setNotice('おやつ購入に必要な100ジェムが足りません');
+          else commit(result.state, 'おやつを100個購入しました');
         }} onTitleEquip={(titleId, level) => {
           const result = equipOwnedTitle(state, titleId, level);
           if (!result.accepted) setNotice(result.reason === 'cost-limit' ? '肩書きコストが上限を超えます' : result.reason === 'slot-limit' ? '肩書きは5枠までです' : '肩書きを装備できません');
@@ -346,7 +361,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; notice: string;
   </section>;
 }
 
-function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
+function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onPetTrain: (enemyId: string) => void; onPetBuySnacks: () => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
   const { state } = props;
   const inventory = props.active === 'weapon' || props.active === 'armor' || props.active === 'orb'
     ? Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active)
@@ -378,7 +393,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
           <em>{offer.price.toLocaleString()} G</em>
         </button>)}
       </div>
-    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
+    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} onTrain={props.onPetTrain} onBuySnacks={props.onPetBuySnacks} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
   </section>;
 }
 
@@ -628,17 +643,32 @@ function OrbView(props: Readonly<{ state: MinuteVanguardState; inventory: readon
   </div>;
 }
 
-function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (enemyId: string, active: boolean) => void }>) {
+function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (enemyId: string, active: boolean) => void; onTrain: (enemyId: string) => void; onBuySnacks: () => void }>) {
   const owned = props.state.gameData.ownedPetEnemyIds.map((id) => enemies.find((enemy) => enemy.id === id)).filter((enemy): enemy is (typeof enemies)[number] => enemy !== undefined);
   const activeLimit = currentJob(props.state).id === 'job.tamer' ? 2 : 1;
+  const totalTraining = totalPetTrainingLevels(props.state);
+  const growthBonus = petTrainingGrowthBonusPct(props.state);
+  const snackRemaining = petSnackAutoRemainingSec(props.state);
   return <div className="pet-view">
-    <div className="pet-party-summary"><span>参戦中</span><strong>{props.state.gameData.activePetEnemyIds.length} / {activeLimit}</strong><small>同じモンスターを30体倒すと捕獲が解禁。以後、勝利時1%で仲間になります。</small></div>
+    <div className="pet-party-summary">
+      <div><span>参戦中</span><strong>{props.state.gameData.activePetEnemyIds.length} / {activeLimit}</strong></div>
+      <div><span>総訓練Lv</span><strong>{totalTraining}</strong><small>成長 +{growthBonus}%</small></div>
+      <small>同じモンスターを30体倒すと捕獲解禁。捕獲後は毎ターン追撃します。</small>
+    </div>
+    <div className="pet-snack-bar">
+      <div><span>🍖 おやつ</span><strong>{props.state.gameData.petSnacks.toLocaleString()}</strong><small>{props.state.gameData.petSnacks >= 100 ? '無料チャージ停止中' : `次まで ${formatRemainingTime(snackRemaining)}`}</small></div>
+      <button onClick={props.onBuySnacks}>💎100<br/><b>+100個</b></button>
+    </div>
     {owned.length === 0 ? <p className="empty-state">まだペットはいません。図鑑で30体討伐したモンスターを狙ってください。</p> : <div className="pet-list">{owned.map((enemy) => {
       const active = props.state.gameData.activePetEnemyIds.includes(enemy.id);
       const kills = props.state.gameData.killCounts[enemy.id] ?? 0;
-      return <button key={enemy.id} className={`pet-row ${active ? 'active' : ''}`} onClick={() => props.onToggle(enemy.id, !active)}>
-        <span className="pet-glyph">{enemy.glyph}</span><span><strong>{enemy.displayName}</strong><small>{enemy.rarity.toUpperCase()} · 討伐 {kills}</small></span><em>{active ? '参戦中' : '編成する'}</em>
-      </button>;
+      const level = petTrainingLevel(props.state, enemy.id);
+      const cap = petTrainingCap(enemy.id) ?? level;
+      return <article key={enemy.id} className={`pet-row ${active ? 'active' : ''}`}>
+        <span className="pet-glyph">{enemy.glyph}</span>
+        <div className="pet-row-main"><strong>{enemy.displayName}</strong><small>{enemy.rarity.toUpperCase()} · 討伐 {kills}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
+        <div className="pet-row-actions"><button className={active ? 'active' : ''} onClick={() => props.onToggle(enemy.id, !active)}>{active ? '参戦中' : '編成'}</button><button disabled={props.state.gameData.petSnacks <= 0 || level >= cap} onClick={() => props.onTrain(enemy.id)}>{level >= cap ? 'MAX' : '🍖 育成'}</button></div>
+      </article>;
     })}</div>}
   </div>;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { enemies } from '../definitions/game-definitions';
-import { createInitialState, fight } from '../plugin/engine';
+import { createInitialState, fight, mutationEligible } from '../plugin/engine';
 
 describe('monster roster density', () => {
   it('ships fifty original encounters in each currently supported monster level', () => {
@@ -34,5 +34,15 @@ describe('monster roster density', () => {
     const bossRates = new Set(enemies.filter((enemy) => enemy.rarity === 'boss').map((enemy) => enemy.orbDropChance));
     expect(commonRates).toEqual(new Set([0.002]));
     expect(bossRates).toEqual(new Set([0.06]));
+  });
+});
+
+
+describe('mutation beginner guard', () => {
+  it('keeps mutations disabled through the first 20 victories', () => {
+    const state = createInitialState(0, 12);
+    expect(mutationEligible(state)).toBe(false);
+    expect(mutationEligible({ ...state, gameData: { ...state.gameData, victories: 19 } })).toBe(false);
+    expect(mutationEligible({ ...state, gameData: { ...state.gameData, victories: 20 } })).toBe(true);
   });
 });

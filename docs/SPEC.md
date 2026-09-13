@@ -76,6 +76,7 @@ Victory can produce several independent reward beats:
 - 1% permanent stat reward
 - equipment drop
 - orb drop
+- mutated monsters are suppressed until 20 total victories; afterward the mutation roll is 1%
 - after 30 defeats of the same monster, a 1% pet-capture roll
 
 Mutation is a 1% encounter roll and increases both difficulty and rewards.
@@ -147,7 +148,7 @@ A monster becomes capture-eligible after 30 successful defeats. Every later vict
 - active pets add a follow-up attack during monster battles
 - the second Tamer pet contributes at reduced power
 
-Full pet leveling and pet gacha are future product work.
+Pet training is implemented: snacks auto-charge once per hour until the free-charge threshold of 100, paid snack bundles add 100 for 100 Gem, each snack raises one pet training level, total training levels grant +1% level-up growth per 20 levels, and trained pets increase follow-up damage. Pet gacha remains future product work.
 
 ## Daily missions
 

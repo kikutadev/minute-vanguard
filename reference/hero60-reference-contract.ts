@@ -126,7 +126,7 @@ export const hero60Reference = {
     maxedDropsAreWasted: true,
     clearsOnJobChange: true,
   },
-  pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2, growthBonusPctPerOwnedPet: 1 },
+  pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2, growthBonusPctPerOwnedPet: 1, snackAutoIntervalSec: 3600, snackNaturalCap: 100, snackBundleGemCost: 100, snackBundleSize: 100, trainingLevelsPerGrowthBonusPct: 20 },
   daily: { missionCount: 5, categoryCount: 5, candidatePoolCount: 22, resetHourJst: 0, rewardByCompletedCount: [3, 3, 4, 5, 5] as const, totalGemReward: 20, loginCycleDays: 7 },
   navigation: {
     bottomTabs: ['ショップ', '装備', 'バトル', 'コレクション', 'ランキング'] as const,

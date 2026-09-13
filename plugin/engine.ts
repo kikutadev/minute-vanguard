@@ -70,6 +70,7 @@ import type {
   OrbEffectId,
   OrbRank,
   PermanentStatReward,
+  PetTrainingState,
   RewardBreakdownEntry,
   StatKey,
   StatValues,
@@ -86,6 +87,13 @@ const TIME_BOOST_OPTIONS = [
   { durationSec: 600, gemCost: 100 },
   { durationSec: 1800, gemCost: 300 },
 ] as const;
+const PET_SNACK_AUTO_INTERVAL_SEC = 60 * 60;
+const PET_SNACK_AUTO_CAP = 100;
+const PET_SNACK_BUNDLE_COST = 100;
+const PET_SNACK_BUNDLE_SIZE = 100;
+const PET_TRAINING_CAP_BY_RARITY: Readonly<Record<MonsterRarity, number>> = {
+  common: 50, uncommon: 60, rare: 70, epic: 80, legendary: 90, boss: 100,
+};
 const ORB_BASE_CAPACITY = 10;
 const ORB_CAPACITY_EXPANSION_COST = 100;
 const ORB_REROLL_COSTS = [50, 100, 200, 400] as const;
@@ -214,6 +222,9 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       freeCooldownSkipUsage: { dayKey: jstDayKey(nowMs), used: 0 },
       ownedPetEnemyIds: [],
       activePetEnemyIds: [],
+      petTraining: {},
+      petSnacks: 0,
+      petSnackRemainderSec: 0,
       orbCapacity: ORB_BASE_CAPACITY,
       timeBoosts: { rush: 0, exp: 0, gold: 0 },
       titles: createProgressiveTitleCollection(),
@@ -240,6 +251,9 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
+        petTraining: state.gameData.petTraining ?? Object.fromEntries((state.gameData.ownedPetEnemyIds ?? []).map((id) => [id, { trainingLevel: 0, nickname: null }])),
+        petSnacks: state.gameData.petSnacks ?? 0,
+        petSnackRemainderSec: state.gameData.petSnackRemainderSec ?? 0,
         permanentUpgrades: { ...state.gameData.permanentUpgrades, freeCooldownSkips: state.gameData.permanentUpgrades.freeCooldownSkips ?? false },
         freeCooldownSkipUsage: state.gameData.freeCooldownSkipUsage ?? { dayKey: jstDayKey(nowMs), used: 0 },
       },
@@ -263,10 +277,16 @@ export function advanceFromWallClock(
 ): Readonly<{ state: MinuteVanguardState; appliedOfflineSec: number }> {
   const elapsed = resolveOfflineElapsed(state.lastWallClockMs, currentWallClockMs, policy);
   if (elapsed.observedElapsedSec === 0) return { state, appliedOfflineSec: 0 };
+  const snackAccrual = accruePetSnacks(state.gameData.petSnacks, state.gameData.petSnackRemainderSec, elapsed.appliedElapsedSec);
   let nextState: MinuteVanguardState = {
     ...state,
     simTimeSec: state.simTimeSec + elapsed.appliedElapsedSec,
     lastWallClockMs: elapsed.nextWallClockMs,
+    gameData: {
+      ...state.gameData,
+      petSnacks: snackAccrual.snacks,
+      petSnackRemainderSec: snackAccrual.remainderSec,
+    },
   };
   const currentDayKey = jstDayKey(currentWallClockMs);
   if (nextState.gameData.missionProgress.dayKey !== currentDayKey) {
@@ -427,6 +447,10 @@ export function playerAttackType(state: MinuteVanguardState): 'physical' | 'magi
   return (weapon?.flatStats.magicAttack ?? 0) > (weapon?.flatStats.attack ?? 0) ? 'magic' : 'physical';
 }
 
+export function mutationEligible(state: MinuteVanguardState): boolean {
+  return state.gameData.victories >= 20;
+}
+
 export function ninjaExecuteChance(luck: number, twentyTurnCoverage = 1): number {
   const baseChance = Math.min(0.15, Math.max(0, luck) / 1200);
   if (twentyTurnCoverage >= 1) return baseChance;
@@ -434,9 +458,69 @@ export function ninjaExecuteChance(luck: number, twentyTurnCoverage = 1): number
   return baseChance * ((twentyTurnCoverage - 0.5) / 0.5);
 }
 
+export function totalPetTrainingLevels(state: MinuteVanguardState): number {
+  return Object.values(state.gameData.petTraining).reduce((sum, training) => sum + training.trainingLevel, 0);
+}
+
+export function petTrainingGrowthBonusPct(state: MinuteVanguardState): number {
+  return Math.floor(totalPetTrainingLevels(state) / 20);
+}
+
 export function levelGrowthMultiplier(state: MinuteVanguardState): number {
   const ownedPetBonusPct = state.gameData.ownedPetEnemyIds.length;
-  return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct) / 100;
+  return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct + petTrainingGrowthBonusPct(state)) / 100;
+}
+
+export function petTrainingCap(enemyId: string): number | null {
+  const enemy = enemies.find((candidate) => candidate.id === enemyId);
+  return enemy === undefined ? null : PET_TRAINING_CAP_BY_RARITY[enemy.rarity];
+}
+
+export function petTrainingLevel(state: MinuteVanguardState, enemyId: string): number {
+  return state.gameData.petTraining[enemyId]?.trainingLevel ?? 0;
+}
+
+export function petSnackAutoRemainingSec(state: MinuteVanguardState): number {
+  if (state.gameData.petSnacks >= PET_SNACK_AUTO_CAP) return 0;
+  return Math.max(1, PET_SNACK_AUTO_INTERVAL_SEC - state.gameData.petSnackRemainderSec);
+}
+
+export function trainPet(
+  state: MinuteVanguardState,
+  enemyId: string,
+): CommandResult<MinuteVanguardState, 'unknown-pet' | 'no-snacks' | 'max-training'> {
+  if (!state.gameData.ownedPetEnemyIds.includes(enemyId)) return reject(state, 'unknown-pet');
+  const cap = petTrainingCap(enemyId);
+  if (cap === null) return reject(state, 'unknown-pet');
+  const current = state.gameData.petTraining[enemyId] ?? { trainingLevel: 0, nickname: null };
+  if (current.trainingLevel >= cap) return reject(state, 'max-training');
+  if (state.gameData.petSnacks <= 0) return reject(state, 'no-snacks');
+  const training: PetTrainingState = { ...current, trainingLevel: current.trainingLevel + 1 };
+  const nextState: MinuteVanguardState = {
+    ...state,
+    gameData: {
+      ...state.gameData,
+      petSnacks: state.gameData.petSnacks - 1,
+      petTraining: { ...state.gameData.petTraining, [enemyId]: training },
+    },
+  };
+  return accept(nextState, [event(nextState, 'petTrained', enemyId, { trainingLevel: training.trainingLevel, cap })]);
+}
+
+export function buyPetSnacks(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'insufficient-gems'> {
+  const spend = spendCurrency(state, ids.currency.gem, PET_SNACK_BUNDLE_COST, 'pet.snacks');
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const nextState: MinuteVanguardState = {
+    ...spend.state,
+    gameData: {
+      ...spend.state.gameData,
+      petSnacks: spend.state.gameData.petSnacks + PET_SNACK_BUNDLE_SIZE,
+      petSnackRemainderSec: spend.state.gameData.petSnacks >= PET_SNACK_AUTO_CAP ? spend.state.gameData.petSnackRemainderSec : 0,
+    },
+  };
+  return accept(nextState, [event(nextState, 'petSnacksPurchased', `${nextState.gameData.petSnacks}`, { cost: PET_SNACK_BUNDLE_COST })]);
 }
 
 export function availableJobs(state: MinuteVanguardState): readonly JobDefinition[] {
@@ -462,7 +546,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   const enemy = selection.enemy;
   const mutatedRoll = draw(nextState, ids.rng.encounter);
   nextState = mutatedRoll.state;
-  const mutated = mutatedRoll.value < 0.01;
+  const mutated = mutationEligible(state) && mutatedRoll.value < 0.01;
   const mutationStat = mutated ? 1.5 : 1;
   const rewardMultiplier = mutated ? 3 : 1;
   const enemyHpMax = Math.max(1, Math.round(enemy.hp * mutationStat));
@@ -521,10 +605,21 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
 
     let petDamage = 0;
     if (enemyHp > 0 && nextState.gameData.activePetEnemyIds.length > 0) {
-      const petBase = Math.max(1, Math.round((stats.attack + stats.magicAttack) * 0.14 * (job.id === 'job.tamer' ? 1.4 : 1) * Math.max(1, titleEffectValue(nextState, 'petDamage'))));
-      petDamage = petBase + (nextState.gameData.activePetEnemyIds.length > 1 ? Math.max(1, Math.round(petBase * 0.6)) : 0);
-      enemyHp = Math.max(0, enemyHp - petDamage);
-      logs.push(`ペットの追撃！ ${petDamage} ダメージ！`);
+      const petTitleMultiplier = Math.max(1, titleEffectValue(nextState, 'petDamage'));
+      for (const [petIndex, petEnemyId] of nextState.gameData.activePetEnemyIds.entries()) {
+        const petEnemy = enemies.find((candidate) => candidate.id === petEnemyId);
+        if (petEnemy === undefined) continue;
+        const sourcePower = petEnemy.attackType === 'magic' ? stats.magicAttack : stats.attack;
+        const trainingLevel = petTrainingLevel(nextState, petEnemyId);
+        const trainingMultiplier = 1 + trainingLevel * 0.02;
+        const tamerMultiplier = job.id === 'job.tamer' ? 1.4 : 1;
+        const secondPetMultiplier = petIndex === 0 ? 1 : 0.6;
+        const hit = Math.max(1, Math.round(sourcePower * 0.25 * trainingMultiplier * tamerMultiplier * petTitleMultiplier * secondPetMultiplier));
+        petDamage += hit;
+        enemyHp = Math.max(0, enemyHp - hit);
+        logs.push(`${petEnemy.displayName}の追撃！ ${hit} ダメージ！`);
+        if (enemyHp <= 0) break;
+      }
     }
 
     if (enemyHp > 0 && job.id === 'job.hexer') {
@@ -655,7 +750,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     }
 
     const equipmentRoll = draw(nextState, ids.rng.loot); nextState = equipmentRoll.state;
-    if (equipmentRoll.value < 0.035 * rewardMultiplier) {
+    if (equipmentRoll.value < 0.035) {
       const dropped = createEquipmentDrop(nextState, enemy);
       nextState = dropped.state;
       droppedItemInstanceId = dropped.itemInstanceId;
@@ -686,6 +781,10 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
             ...nextState.gameData,
             ownedPetEnemyIds,
             activePetEnemyIds,
+            petTraining: {
+              ...nextState.gameData.petTraining,
+              [enemy.id]: nextState.gameData.petTraining[enemy.id] ?? { trainingLevel: 0, nickname: null },
+            },
             player: { ...nextState.gameData.player, petCount: ownedPetEnemyIds.length },
           },
         };
@@ -1688,6 +1787,17 @@ export const gamblerExpectedMultiplier =
 
 function damage(power: number, defense: number, variance: number, multiplier: number): number {
   return Math.max(1, Math.round(Math.max(1, power - defense * 0.55) * variance * multiplier));
+}
+
+function accruePetSnacks(snacks: number, remainderSec: number, elapsedSec: number): Readonly<{ snacks: number; remainderSec: number }> {
+  if (snacks >= PET_SNACK_AUTO_CAP) return { snacks, remainderSec: 0 };
+  const totalSec = Math.max(0, remainderSec) + Math.max(0, elapsedSec);
+  const generated = Math.min(PET_SNACK_AUTO_CAP - snacks, Math.floor(totalSec / PET_SNACK_AUTO_INTERVAL_SEC));
+  const nextSnacks = snacks + generated;
+  return {
+    snacks: nextSnacks,
+    remainderSec: nextSnacks >= PET_SNACK_AUTO_CAP ? 0 : totalSec % PET_SNACK_AUTO_INTERVAL_SEC,
+  };
 }
 
 function createDailyMissionProgress(dayKey: string): DailyMissionProgress {
