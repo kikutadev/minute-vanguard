@@ -75,6 +75,7 @@
 - Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
 - Gold bags: 30/100/300 Gem, based only on rolling last-ten monster-victory levels, unavailable before two wins, unaffected by current Gold multipliers. Exact payout equation remains product-owned because the public guide does not expose it.
+- Public profile / reference ranking boundary: recent profiles plus Lv / victories / codex sorts are backed by Minute Vanguard Cloudflare Worker + D1 and are explicit opt-in. These client-submitted values are discovery/reference only and are never treated as PvP or reward authority.
 
 ### Public behavior known, exact table not yet public-locked
 
@@ -88,7 +89,8 @@
 
 ### Next implementation gaps
 
-1. Server boundary for real ranking / PvP / raid
+1. Server-authoritative PvP / Champion boundary
+2. Server-authoritative shared Raid / wanted-event boundary
 
 ### Additional solo parity locked in current implementation
 

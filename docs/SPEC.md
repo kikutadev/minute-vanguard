@@ -17,11 +17,13 @@ The product is an independent repository beside the other idle-game consumers. `
 
 Minute Vanguard is a solo game first. Battle, reward, level, equipment, pet, mission, save/load and offline resume use the local save as authority and must work with no backend configured.
 
-Other-player information is optional. The game builds a small product-owned public projection (`MinuteVanguardPublicData`) rather than exposing the raw save, and consumes it through the Kit `PublicPlayerDirectoryReader`. Production builds fall back to solo presentation when `VITE_PUBLIC_PLAYER_API_BASE_URL` is absent or unavailable. Publishing is deferred until authenticated ownership exists on the Cloudflare Worker side.
+Other-player information is optional. The game builds a small product-owned public projection (`MinuteVanguardPublicData`) rather than exposing the raw save, and consumes it through the Kit `PublicPlayerDirectoryReader`. The production Pages build talks to a separate Cloudflare Worker + D1 service; an outage changes Ranking into an unavailable state but never blocks battle, save/load or progression.
 
-For local development, the Cloudflare path is reproduced with Wrangler local D1. `cloudflare/migrations/` mirrors the Kit public-player schema, `cloudflare/worker.js` composes `D1PublicPlayerDirectory` with the Kit request handler, and Vite proxies `/api` to the local Worker. Seed rows are public projections only, never raw saves. This local harness is part of QA, not a deployed production backend.
+Publishing is off by default. Enabling it claims an anonymous `playerId` plus a random 256-bit write token in the browser. D1 stores only the SHA-256 token hash. PUT/DELETE require that bearer token, revisions are monotonic, publishes are rate-limited, and the Worker validates a bounded public payload before storing it. Only display name, level, job, public battle counts, codex count, pet count and equipment summary are uploaded. Full save state, currencies, RNG streams, inventory instance ids and the write token are not public data. Disabling publishing deletes the D1 snapshot and cancels queued client-side auto-publishes.
 
-GitHub Pages remains the current static deployment target and uploads only `dist/`. A future authenticated/shared-data production deployment can move the same API shape to Cloudflare Workers + D1 without changing solo progression authority.
+The Ranking tab exposes recent public profiles plus Level / victories / codex sorts. These are explicitly non-authoritative reference rankings because their source is a local client save. They cannot drive PvP/Champion results or server rewards. Server-authoritative PvP, shared Raid, wanted events and other adversarial/shared progression remain a separate backend boundary.
+
+For local development, the same Cloudflare path is reproduced with Wrangler local D1. `cloudflare/migrations/` owns the public snapshot + anonymous ownership schema, `cloudflare/worker.js` composes `D1PublicPlayerDirectory` with authenticated write routes, and Vite proxies `/api` to the local Worker. GitHub Pages still uploads only `dist/`; Worker/D1 is deployed separately.
 
 ## Reference fidelity target
 
@@ -199,7 +201,7 @@ Schema upgrades normalize incompatible public-prototype saves into the current p
 
 ## Online-only boundary
 
-The current independent Pages build is local-first. Real Ranking, PvP/Champion, shared Raid, shared wanted events, chat, account/payment and server rewards require a server-authoritative service and are not faked as completed Kit features.
+The independent Pages build remains local-first, but opt-in public profiles and non-authoritative reference leaderboards are now live through Cloudflare Worker + D1. PvP/Champion, shared Raid, shared wanted events, chat, account/payment and server rewards still require server-authoritative state and are not faked by trusting the public-profile table.
 
 ## Deployment
 

@@ -109,6 +109,7 @@ import {
   withdrawMimicBank,
 } from '../plugin/engine';
 import { publicPlayerDirectory } from './public-player-directory';
+import { getMinuteVanguardOnlineClient, type PublicLeaderboardMetric } from './public-player-online';
 
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
@@ -125,6 +126,10 @@ function battleSceneDaypart(date = new Date()): BattleSceneDaypart {
   if (hour >= 10 && hour < 17) return 'day';
   if (hour >= 17 && hour < 20) return 'evening';
   return 'night';
+}
+
+function publicProfileFingerprint(state: MinuteVanguardState): string {
+  return JSON.stringify({ displayName: state.gameData.player.name, data: createMinuteVanguardPublicData(state) });
 }
 
 function battleSceneProps(monsterLevel: number): Readonly<{ className: string; label: string }> {
@@ -146,6 +151,8 @@ export function MinuteVanguardApp() {
   const [battleStep, setBattleStep] = useState(0);
   const [simpleBattleOpen, setSimpleBattleOpen] = useState(false);
   const stateRef = useRef<MinuteVanguardState | null>(null);
+  const publicProfileFingerprintRef = useRef('');
+  const publicProfilePublishTimerRef = useRef<number | null>(null);
   const noticeSequenceRef = useRef(1);
   const { current: noticePresentation, enqueue: enqueueNotice } = usePresentationQueue<NoticePresentation>(() => 2_400);
   const setNotice = (message: string) => {
@@ -172,6 +179,25 @@ export function MinuteVanguardApp() {
 
   useEffect(() => { stateRef.current = state; }, [state]);
 
+  useEffect(() => {
+    if (state === null) return;
+    const online = getMinuteVanguardOnlineClient();
+    if (!online.isPublishingEnabled()) return;
+    const fingerprint = publicProfileFingerprint(state)
+    if (fingerprint === publicProfileFingerprintRef.current) return;
+    publicProfileFingerprintRef.current = fingerprint;
+    if (publicProfilePublishTimerRef.current !== null) window.clearTimeout(publicProfilePublishTimerRef.current);
+    publicProfilePublishTimerRef.current = window.setTimeout(() => {
+      publicProfilePublishTimerRef.current = null;
+      void online.publish(state).catch(() => {
+        publicProfileFingerprintRef.current = '';
+      });
+    }, 1_500);
+  }, [state]);
+
+  useEffect(() => () => {
+    if (publicProfilePublishTimerRef.current !== null) window.clearTimeout(publicProfilePublishTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -355,7 +381,13 @@ export function MinuteVanguardApp() {
           else commit(result.state, 'ゴールド袋を開けました');
         }} />}
         {tab === 'collection' && <CollectionView state={state} onAchievementsViewed={() => commit(clearNewAchievementFlags(state))} onSelectAchievement={(achievementId) => { const result = selectAchievementTitle(state, achievementId); if (!result.accepted) setNotice('未獲得の称号は表示できません'); else commit(result.state, achievementId === null ? '称号表示を外しました' : '表示する称号を変更しました'); }} />}
-        {tab === 'ranking' && <RankingView state={state} />}
+        {tab === 'ranking' && <RankingView state={state} onPublishingChanged={(enabled) => {
+          publicProfileFingerprintRef.current = enabled ? publicProfileFingerprint(state) : '';
+          if (!enabled && publicProfilePublishTimerRef.current !== null) {
+            window.clearTimeout(publicProfilePublishTimerRef.current);
+            publicProfilePublishTimerRef.current = null;
+          }
+        }} />}
       </div>
 
       {noticePresentation !== null && (
@@ -730,21 +762,26 @@ function CollectionView(props: Readonly<{ state: MinuteVanguardState; onAchievem
   </section>;
 }
 
-function RankingView({ state }: Readonly<{ state: MinuteVanguardState }>) {
-  const [remoteStatus, setRemoteStatus] = useState<'disabled' | 'loading' | 'ready' | 'error'>(
-    publicPlayerDirectory === null ? 'disabled' : 'loading',
-  );
+function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVanguardState; onPublishingChanged: (enabled: boolean) => void }>) {
+  type RankingTab = 'recent' | PublicLeaderboardMetric;
+  const [rankingTab, setRankingTab] = useState<RankingTab>('recent');
+  const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remotePlayers, setRemotePlayers] = useState<readonly PublicPlayerSnapshot<MinuteVanguardPublicData>[]>([]);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
+  const [publishingEnabled, setPublishingEnabled] = useState(() => getMinuteVanguardOnlineClient().isPublishingEnabled());
+  const [publishBusy, setPublishBusy] = useState(false);
+  const [refreshSequence, setRefreshSequence] = useState(0);
   const own = createMinuteVanguardPublicData(state);
 
   useEffect(() => {
-    if (publicPlayerDirectory === null) return;
     let cancelled = false;
-    void publicPlayerDirectory.listPublicPlayers({ gameId: MINUTE_VANGUARD_GAME_ID, limit: 20 })
-      .then((page) => {
+    const request = rankingTab === 'recent'
+      ? publicPlayerDirectory.listPublicPlayers({ gameId: MINUTE_VANGUARD_GAME_ID, limit: 20 }).then((page) => page.players)
+      : getMinuteVanguardOnlineClient().listLeaderboard(rankingTab, 20);
+    void request
+      .then((players) => {
         if (cancelled) return;
-        setRemotePlayers(page.players);
+        setRemotePlayers(players);
         setRemoteStatus('ready');
       })
       .catch(() => {
@@ -753,29 +790,72 @@ function RankingView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         setRemoteStatus('error');
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [rankingTab, refreshSequence]);
 
   const selected = remotePlayers.find((player) => player.playerId === selectedPlayerId);
+  const togglePublishing = async () => {
+    if (publishBusy) return;
+    const online = getMinuteVanguardOnlineClient();
+    setPublishBusy(true);
+    try {
+      if (publishingEnabled) {
+        onPublishingChanged(false);
+        try {
+          await online.disablePublishing();
+        } catch (error) {
+          onPublishingChanged(true);
+          throw error;
+        }
+        setPublishingEnabled(false);
+      } else {
+        await online.enablePublishing(state);
+        setPublishingEnabled(true);
+        onPublishingChanged(true);
+      }
+      setRemoteStatus('loading');
+      setRefreshSequence((value) => value + 1);
+    } catch {
+      setRemoteStatus('error');
+    } finally {
+      setPublishBusy(false);
+    }
+  };
+  const rankLabel = (index: number) => rankingTab === 'recent' ? '•' : `${index + 1}`;
+  const selectRankingTab = (next: RankingTab) => {
+    if (next === rankingTab) return;
+    setRemoteStatus('loading');
+    setSelectedPlayerId(null);
+    setRankingTab(next);
+  };
+
   return <section className="page-section ranking-page">
     <h1>ランキング</h1>
-    <div className="subtabs"><button className="active">公開冒険者</button><button disabled>レベル</button><button disabled>討伐数</button><button disabled>図鑑</button></div>
+    <div className="subtabs">
+      <button className={rankingTab === 'recent' ? 'active' : ''} onClick={() => selectRankingTab('recent')}>最近</button>
+      <button className={rankingTab === 'level' ? 'active' : ''} onClick={() => selectRankingTab('level')}>レベル</button>
+      <button className={rankingTab === 'victories' ? 'active' : ''} onClick={() => selectRankingTab('victories')}>討伐数</button>
+      <button className={rankingTab === 'codex' ? 'active' : ''} onClick={() => selectRankingTab('codex')}>図鑑</button>
+    </div>
 
     <div className="self-public-card">
       <span>あなた</span><strong>{state.gameData.player.name}</strong><em>Lv.{own.level} · {jobDisplayName(own.jobId)}</em>
       <small>{own.victories.toLocaleString()}勝 / 図鑑 {own.discoveredEnemyCount}/{enemies.length} / ペット {own.ownedPetCount}</small>
+      <button className={publishingEnabled ? 'publishing' : ''} disabled={publishBusy} onClick={() => void togglePublishing()}>
+        {publishBusy ? '同期中…' : publishingEnabled ? '公開中 · 停止する' : '公開プロフィールを有効にする'}
+      </button>
     </div>
 
-    {remoteStatus === 'disabled' && <p className="offline-label">SOLO MODE · 公開プレイヤーAPI未設定。ゲーム進行には影響しません。</p>}
+    <p className="ranking-authority-note">公開は任意です。送信するのは表示名・Lv・戦績・図鑑数・装備要約だけで、セーブデータは送信しません。順位は公開プロフィールの参考値で、PvPの競技authorityではありません。</p>
     {remoteStatus === 'loading' && <p className="offline-label">公開冒険者を読み込んでいます…</p>}
-    {remoteStatus === 'error' && <p className="offline-label error">公開冒険者を取得できません。ソロプレイはそのまま続けられます。</p>}
+    {remoteStatus === 'error' && <p className="offline-label error">オンライン一覧を取得できません。ソロプレイはそのまま続けられます。</p>}
     {remoteStatus === 'ready' && remotePlayers.length === 0 && <p className="empty-state">公開中の冒険者はまだいません。</p>}
 
-    <div className="ranking-list">{remotePlayers.map((player) => <button
+    <div className="ranking-list">{remotePlayers.map((player, index) => <button
       className={`rank-row public-player-row ${selectedPlayerId === player.playerId ? 'selected' : ''}`}
       key={player.playerId}
       onClick={() => setSelectedPlayerId((current) => current === player.playerId ? null : player.playerId)}
     >
-      <b>•</b><span>🧑‍🚀</span><strong>{player.displayName}<small>{jobDisplayName(player.data.jobId)} · {player.data.victories.toLocaleString()}勝</small></strong><em>Lv.{player.data.level}</em>
+      <b>{rankLabel(index)}</b><span>🧑‍🚀</span><strong>{player.displayName}<small>{jobDisplayName(player.data.jobId)} · {player.data.victories.toLocaleString()}勝</small></strong><em>{rankingTab === 'codex' ? `${player.data.discoveredEnemyCount}/${enemies.length}` : rankingTab === 'victories' ? `${player.data.victories.toLocaleString()}勝` : `Lv.${player.data.level}`}</em>
     </button>)}</div>
 
     {selected !== undefined && <div className="public-player-detail">

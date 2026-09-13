@@ -29,6 +29,19 @@ describe('Minute Vanguard public player projection', () => {
     expect(data).not.toHaveProperty('exp');
   });
 
+  it('counts captured and gacha-limited pets in the public owned-pet total', () => {
+    const initial = createInitialState(0, 73);
+    const state = {
+      ...initial,
+      gameData: {
+        ...initial.gameData,
+        ownedPetEnemyIds: ['enemy.pebble'],
+        ownedGachaPetIds: ['gacha.pet.001'],
+      },
+    };
+    expect(createMinuteVanguardPublicData(state).ownedPetCount).toBe(2);
+  });
+
   it('adds public metadata without embedding state', () => {
     const state = createInitialState(0, 72);
     const snapshot = createMinuteVanguardPublicSnapshot({

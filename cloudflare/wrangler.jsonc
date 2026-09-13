@@ -1,14 +1,14 @@
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
-  "name": "minute-vanguard-local-api",
+  "name": "minute-vanguard-online",
   "main": "worker.js",
   "compatibility_date": "2026-09-12",
   "dev": { "port": 8787, "local_protocol": "http" },
   "d1_databases": [
     {
       "binding": "PUBLIC_PLAYER_DB",
-      "database_name": "minute-vanguard-public-player-directory",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_name": "minute-vanguard-online",
+      "database_id": "f25b0bc3-bf59-41fd-b956-9834dd54dca9",
       "migrations_dir": "migrations"
     }
   ]

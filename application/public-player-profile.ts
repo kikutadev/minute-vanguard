@@ -31,7 +31,7 @@ export function createMinuteVanguardPublicData(state: MinuteVanguardState): Minu
     totalBattles: state.gameData.totalBattles,
     victories: state.gameData.victories,
     discoveredEnemyCount: state.gameData.discoveredEnemyIds.length,
-    ownedPetCount: state.gameData.ownedPetEnemyIds.length,
+    ownedPetCount: new Set([...state.gameData.ownedPetEnemyIds, ...state.gameData.ownedGachaPetIds]).size,
     equippedWeaponName: weapon === undefined ? null : itemDefinitions[weapon.definitionId]?.displayName ?? null,
     equippedArmorName: armor === undefined ? null : itemDefinitions[armor.definitionId]?.displayName ?? null,
     equippedOrbRank: orb?.data?.orbRank ?? null,
