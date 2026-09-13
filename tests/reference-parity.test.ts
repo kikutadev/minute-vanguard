@@ -128,6 +128,12 @@ describe('public reference parity locks', () => {
     expect(arenaDefenseSeasonScore(1_500, weekday)).toBe(5);
     expect(arenaRatingDeltas(1_000, 1_700, 'win')).toEqual({ attacker: 0, defender: 0 });
     expect(hero60Reference.arena.exactRatingFormulaPublic).toBe(false);
+    expect(hero60Reference.arena.seasonRewards.gemMin).toBe(3);
+    expect(hero60Reference.arena.seasonRewards.gemMax).toBe(120);
+    expect(hero60Reference.arena.seasonRewards.masterGrantsCrest).toBe(true);
+    expect(hero60Reference.arena.seasonRewards.unclaimedCarriesForward).toBe(true);
+    expect(hero60Reference.arena.seasonRewards.championRecordedInHall).toBe(true);
+    expect(hero60Reference.arena.seasonRewards.exactTierAmountsPublic).toBe(false);
     expect(arenaPetAttackRate('job.tamer', 1)).toBeCloseTo((0.25 + hero60Reference.arena.pets.tamerBonusPoints / 100) * hero60Reference.arena.pets.tamerSecondMultiplier);
     expect(arenaDodgeChance('job.ninja', 0)).toBeCloseTo(hero60Reference.arena.pets.ninjaDodge);
     expect(arenaDodgeChance('job.wraith', 0)).toBeCloseTo(hero60Reference.arena.pets.wraithDodge);

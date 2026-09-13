@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ARENA_CHAMPION_BONUS,
   ARENA_COOLDOWN_MS,
+  ARENA_SEASON_REWARDS,
   ARENA_DEFAULT_LOADOUT,
   ARENA_GEAR,
   ARENA_DAILY_WIN_LIMIT,
@@ -17,6 +19,7 @@ import {
   arenaJstDayKey,
   arenaNextTierForScore,
   arenaRatingDeltas,
+  arenaSeasonRewardForScore,
   arenaSeasonKey,
   arenaSeasonResetRating,
   arenaTierForScore,
@@ -135,6 +138,15 @@ describe('arena domain', () => {
     expect(arenaWraithAfterHits(9, 1)).toBeCloseTo(3);
     expect(arenaWraithAfterHits(9, 2)).toBeCloseTo(1);
     expect(arenaWraithAfterHits(1, 1)).toBeCloseTo(0.5);
+  });
+
+  it('keeps product-owned season rewards inside the public 3–120 Gem envelope', () => {
+    expect(ARENA_SEASON_REWARDS).toHaveLength(10);
+    expect(ARENA_SEASON_REWARDS.map((reward) => reward.gems)).toEqual([...ARENA_SEASON_REWARDS.map((reward) => reward.gems)].sort((a, b) => a - b));
+    expect(ARENA_SEASON_REWARDS[0]?.gems).toBe(3);
+    expect(ARENA_SEASON_REWARDS.at(-1)?.gems).toBe(120);
+    expect(arenaSeasonRewardForScore(40_000).grantsMasterToken).toBe(true);
+    expect(ARENA_CHAMPION_BONUS.gems).toBeGreaterThan(0);
   });
 
   it('uses the published tier thresholds', () => {

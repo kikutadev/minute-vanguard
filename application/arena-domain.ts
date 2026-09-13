@@ -111,6 +111,33 @@ export type ArenaTier = Readonly<{
   threshold: number;
 }>;
 
+export type ArenaSeasonRewardDefinition = Readonly<{
+  tierId: ArenaTier['id'];
+  gold: number;
+  gems: number;
+  grantsMasterToken: boolean;
+}>;
+
+/** Product-owned values. Public reference currently exposes only Gold+Gem, Gem range 3–120, and Master's crest. */
+export const ARENA_SEASON_REWARDS: readonly ArenaSeasonRewardDefinition[] = Object.freeze([
+  { tierId: 'iron', gold: 500, gems: 3, grantsMasterToken: false },
+  { tierId: 'bronze', gold: 1_000, gems: 5, grantsMasterToken: false },
+  { tierId: 'silver', gold: 2_500, gems: 8, grantsMasterToken: false },
+  { tierId: 'gold', gold: 5_000, gems: 12, grantsMasterToken: false },
+  { tierId: 'platinum', gold: 10_000, gems: 20, grantsMasterToken: false },
+  { tierId: 'emerald', gold: 20_000, gems: 30, grantsMasterToken: false },
+  { tierId: 'sapphire', gold: 40_000, gems: 45, grantsMasterToken: false },
+  { tierId: 'ruby', gold: 75_000, gems: 65, grantsMasterToken: false },
+  { tierId: 'diamond', gold: 125_000, gems: 90, grantsMasterToken: false },
+  { tierId: 'master', gold: 200_000, gems: 120, grantsMasterToken: true },
+]);
+export const ARENA_CHAMPION_BONUS = Object.freeze({ gold: 200_000, gems: 120 });
+
+export function arenaSeasonRewardForScore(score: number): ArenaSeasonRewardDefinition {
+  const tier = arenaTierForScore(score);
+  return ARENA_SEASON_REWARDS.find((reward) => reward.tierId === tier.id)!;
+}
+
 export const ARENA_TIERS: readonly ArenaTier[] = Object.freeze([
   { id: 'iron', displayName: 'アイアン', threshold: 0 },
   { id: 'bronze', displayName: 'ブロンズ', threshold: 300 },

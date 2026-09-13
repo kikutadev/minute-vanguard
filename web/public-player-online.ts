@@ -1,5 +1,5 @@
 import type { PublicPlayerSnapshot } from 'idle-game-kit';
-import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
+import type { ArenaBattleResult, ArenaHallEntry, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView, ArenaSeasonRewardReceipt } from '../application/arena-contract';
 import { isArenaLoadout, isArenaPetLoadout, type ArenaLoadout, type ArenaPetLoadout } from '../application/arena-domain';
 import type { MinuteVanguardState } from '../definitions/types';
 import {
@@ -233,6 +233,37 @@ export class MinuteVanguardOnlineClient {
     return { arena: parseArenaPlayer(payload.arena), battle: parseArenaBattle(payload.battle) };
   }
 
+  async listArenaHall(): Promise<readonly ArenaHallEntry[]> {
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/hall`), { headers: { accept: 'application/json' } });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !Array.isArray(payload.entries)) throw new PublicProfileOnlineError(502, 'invalid-arena-hall-envelope', payload);
+    return payload.entries.map(parseArenaHallEntry);
+  }
+
+  async listArenaSeasonRewards(): Promise<readonly ArenaSeasonRewardReceipt[]> {
+    const identity = this.#readIdentity();
+    if (identity === null) return [];
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/rewards`), {
+      headers: { authorization: `Bearer ${identity.writeToken}`, accept: 'application/json' },
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !Array.isArray(payload.rewards)) throw new PublicProfileOnlineError(502, 'invalid-arena-rewards-envelope', payload);
+    return payload.rewards.map(parseArenaSeasonReward);
+  }
+
+  async acknowledgeArenaSeasonReward(receiptId: string): Promise<void> {
+    const identity = this.#readIdentity();
+    if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/rewards/ack`), {
+      method: 'POST', headers: { authorization: `Bearer ${identity.writeToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ receiptId }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+  }
+
   async listArenaLeaderboard(limit = 10): Promise<readonly ArenaLeaderboardEntry[]> {
     const url = new URL(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/leaderboard`));
     url.searchParams.set('limit', String(limit));
@@ -371,6 +402,24 @@ function parseArenaHistoryEntry(value: unknown): ArenaHistoryEntry {
     throw new PublicProfileOnlineError(502, 'invalid-arena-history-entry', value);
   }
   return value as unknown as ArenaHistoryEntry;
+}
+
+function parseArenaSeasonReward(value: unknown): ArenaSeasonRewardReceipt {
+  if (!isRecord(value) || typeof value.receiptId !== 'string' || typeof value.seasonKey !== 'string'
+    || !Number.isFinite(value.rank) || typeof value.tierId !== 'string' || !Number.isFinite(value.gold) || !Number.isFinite(value.gems)
+    || typeof value.grantsMasterToken !== 'boolean' || typeof value.champion !== 'boolean') {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-season-reward', value);
+  }
+  return value as unknown as ArenaSeasonRewardReceipt;
+}
+
+function parseArenaHallEntry(value: unknown): ArenaHallEntry {
+  if (!isRecord(value) || typeof value.seasonKey !== 'string' || typeof value.playerId !== 'string'
+    || typeof value.displayName !== 'string' || typeof value.jobId !== 'string' || !Number.isFinite(value.rating)
+    || !Number.isFinite(value.seasonScore) || !Number.isFinite(value.participantCount)) {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-hall-entry', value);
+  }
+  return value as unknown as ArenaHallEntry;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

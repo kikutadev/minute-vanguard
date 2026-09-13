@@ -78,6 +78,7 @@
 - Arena dedicated loadout: public reference locks free Weapon / Armor / Orb selection and the same loadout on attack + defense. Minute Vanguard uses three original options per slot; exact stat values are product-owned because the public table is not exposed.
 - Arena pets: pets follow up every turn in Arena, Tamer can field two, second pet is 60%, Tamer adds 40 percentage points to pet attack rate, and pet attacks use the same published Ninja 30% / Wraith 70% dodge. Minute Vanguard keeps normal pet ownership/training out of competitive authority and stores normalized physical/magic Arena pet types in D1; the unpublished base Arena pet rate is product-owned.
 - Arena named challenges: ranking entries can be challenged directly. They share server-owned Rating, W/L/D, defense barrier, daily three-win limit and the same 60-second Arena cooldown, while moving no Gold. Random-match Gold transfer remains intentionally unimplemented until Gold itself has trusted server authority.
+- Arena season close: before any player row resets, the Worker snapshots the completed season into immutable D1 results. Pending rewards are claimed from Menu → Presents and carry forward until ACK, Hall of Fame records the non-zero-score champion, and Master rewards permanently grant the local `頂の証` cosmetic flag. Public reference locks Gold + Gem, 3–120 Gem base range, Master crest, carry-forward, champion bonus and Hall of Fame; the exact 10-tier amounts remain product-owned.
 - Public profile / reference ranking boundary: recent profiles plus Lv / victories / codex sorts are backed by Minute Vanguard Cloudflare Worker + D1 and are explicit opt-in. These client-submitted values are discovery/reference only and are never treated as PvP or reward authority.
 - Arena / Champion: weekly Monday 0:00 JST season, Season Score rank #1 crown, Rating start 1,000, nearby-Rating random matching, fixed separate 60-second cooldown, 3 wins/day per opponent, two-hour optional defense barrier, attacker win score Rating÷100 clamped 2–40, loss/draw 1pt, defense win 1/3, 200-point defense allowance, Fri/Sat/Sun ×2 score, 700+ Rating-gap upset guard, ten public tier thresholds. Minute Vanguard resolves these on Worker/D1 authority rather than the public-profile table.
 - Arena combat authority: server seed + combatVersion + resolved turn log, server-owned Rating/score/cooldown/history, and conditional D1 cooldown reservation prevent client stat injection and concurrent double-submit. Local Lv/equipment/Gold/pet training are not combat inputs; job id, server-owned Arena loadout, and normalized Arena pet types select the competitive style.
@@ -95,7 +96,7 @@
 
 ### Next implementation gaps
 
-1. Arena random-match Gold transfer, season rewards and hall-of-fame persistence
+1. Arena random-match Gold transfer with trusted server Gold authority
 3. Server-authoritative shared Raid / wanted-event boundary
 
 ### Additional solo parity locked in current implementation

@@ -2,8 +2,8 @@ import { D1PublicPlayerDirectory, createPublicPlayerDirectoryHandler } from '../
 import {
   ARENA_COOLDOWN_MS, ARENA_DAILY_WIN_LIMIT, ARENA_DEFENSE_BARRIER_MS, ARENA_START_RATING, ARENA_DEFAULT_LOADOUT, ARENA_DEFAULT_PETS,
   arenaAttackSeasonScore, arenaDefenseSeasonScore, arenaJstDayKey, arenaNextTierForScore,
-  arenaRatingDeltas, arenaSeasonKey, arenaSeasonResetRating, arenaTierForScore, arenaWeekendMultiplier,
-  isArenaLoadout, isArenaPetLoadout, simulateArenaBattle,
+  arenaRatingDeltas, arenaSeasonKey, arenaSeasonResetRating, arenaSeasonRewardForScore, arenaTierForScore, arenaWeekendMultiplier,
+  ARENA_CHAMPION_BONUS, isArenaLoadout, isArenaPetLoadout, simulateArenaBattle,
 } from '../application/arena-domain.ts';
 
 const GAME_ID = 'minute-vanguard';
@@ -91,6 +91,12 @@ function publicPlayerRoute(pathname) {
 }
 
 function arenaRoute(pathname) {
+  const hall = pathname.match(/^\/v1\/games\/([^/]+)\/arena\/hall$/u);
+  if (hall) return { kind: 'arena-hall', gameId: decodeURIComponent(hall[1]) };
+  const rewardAck = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/rewards\/ack$/u);
+  if (rewardAck) return { kind: 'arena-reward-ack', gameId: decodeURIComponent(rewardAck[1]), playerId: decodeURIComponent(rewardAck[2]) };
+  const rewards = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/rewards$/u);
+  if (rewards) return { kind: 'arena-rewards', gameId: decodeURIComponent(rewards[1]), playerId: decodeURIComponent(rewards[2]) };
   const board = pathname.match(/^\/v1\/games\/([^/]+)\/arena\/leaderboard$/u);
   if (board) return { kind: 'arena-leaderboard', gameId: decodeURIComponent(board[1]) };
   const history = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/history$/u);
@@ -296,8 +302,62 @@ async function getArenaRow(db, gameId, playerId) {
   `).bind(gameId, playerId).first();
 }
 
+async function finalizeArenaPastSeasons(db, gameId, currentSeason, nowMs) {
+  const pending = await db.prepare(`
+    SELECT DISTINCT p.season_key
+    FROM arena_players p
+    LEFT JOIN arena_seasons s ON s.game_id = p.game_id AND s.season_key = p.season_key
+    WHERE p.game_id = ? AND p.season_key < ? AND s.season_key IS NULL
+    ORDER BY p.season_key ASC
+  `).bind(gameId, currentSeason).all();
+  for (const entry of pending.results ?? []) {
+    const seasonKey = entry.season_key;
+    const rows = await db.prepare(`
+      SELECT player_id, display_name, job_id, rating, season_score, wins, losses, draws, updated_at_ms
+      FROM arena_players WHERE game_id = ? AND season_key = ?
+      ORDER BY season_score DESC, rating DESC, updated_at_ms ASC, player_id ASC
+    `).bind(gameId, seasonKey).all();
+    const players = rows.results ?? [];
+    if (players.length === 0) continue;
+    const top = players[0];
+    const hasChampion = Number(top.season_score) > 0;
+    const statements = [db.prepare(`
+      INSERT OR IGNORE INTO arena_seasons (
+        game_id, season_key, finalized_at_ms, participant_count,
+        champion_player_id, champion_display_name, champion_job_id, champion_rating, champion_score
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).bind(
+      gameId, seasonKey, nowMs, players.length,
+      hasChampion ? top.player_id : null,
+      hasChampion ? top.display_name : null,
+      hasChampion ? top.job_id : null,
+      hasChampion ? Number(top.rating) : null,
+      hasChampion ? Number(top.season_score) : null,
+    )];
+    players.forEach((player, index) => {
+      const reward = arenaSeasonRewardForScore(Number(player.season_score));
+      const champion = hasChampion && index === 0;
+      statements.push(db.prepare(`
+        INSERT OR IGNORE INTO arena_season_results (
+          game_id, season_key, player_id, rank, display_name, job_id, rating, season_score,
+          wins, losses, draws, tier_id, reward_gold, reward_gems, master_token,
+          champion_bonus_gold, champion_bonus_gems, receipt_id, claimed_at_ms
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+      `).bind(
+        gameId, seasonKey, player.player_id, index + 1, player.display_name, player.job_id,
+        Number(player.rating), Number(player.season_score), Number(player.wins), Number(player.losses), Number(player.draws),
+        reward.tierId, reward.gold, reward.gems, reward.grantsMasterToken ? 1 : 0,
+        champion ? ARENA_CHAMPION_BONUS.gold : 0, champion ? ARENA_CHAMPION_BONUS.gems : 0,
+        `arena-season:${gameId}:${seasonKey}:${player.player_id}`,
+      ));
+    });
+    await db.batch(statements);
+  }
+}
+
 async function normalizeArenaSeason(db, row, nowMs) {
   const currentSeason = arenaSeasonKey(nowMs);
+  await finalizeArenaPastSeasons(db, row.game_id, currentSeason, nowMs);
   if (row.season_key === currentSeason) return row;
   const nextRating = arenaSeasonResetRating(Number(row.rating));
   await db.prepare(`
@@ -466,6 +526,7 @@ async function handleArenaLeaderboard(request, env, gameId) {
   const url = new URL(request.url);
   const limit = normalizeLimit(url.searchParams.get('limit'), 10);
   const seasonKey = arenaSeasonKey(Date.now());
+  await finalizeArenaPastSeasons(env.PUBLIC_PLAYER_DB, gameId, seasonKey, Date.now());
   const rows = await env.PUBLIC_PLAYER_DB.prepare(`
     SELECT player_id, display_name, job_id, rating, best_rating, season_score, wins, losses, draws
     FROM arena_players WHERE game_id = ? AND season_key = ?
@@ -502,6 +563,79 @@ async function handleArenaHistory(request, env, gameId, playerId) {
     };
   });
   return json(request, { entries });
+}
+
+async function handleArenaHall(request, env, gameId) {
+  if (gameId !== GAME_ID) return json(request, { error: 'unknown-game' }, { status: 404 });
+  const currentSeason = arenaSeasonKey(Date.now());
+  await finalizeArenaPastSeasons(env.PUBLIC_PLAYER_DB, gameId, currentSeason, Date.now());
+  const rows = await env.PUBLIC_PLAYER_DB.prepare(`
+    SELECT season_key, finalized_at_ms, participant_count, champion_player_id, champion_display_name,
+      champion_job_id, champion_rating, champion_score
+    FROM arena_seasons
+    WHERE game_id = ? AND champion_player_id IS NOT NULL
+    ORDER BY season_key DESC LIMIT 30
+  `).bind(gameId).all();
+  return json(request, { entries: (rows.results ?? []).map((row) => ({
+    seasonKey: row.season_key,
+    finalizedAtMs: Number(row.finalized_at_ms),
+    participantCount: Number(row.participant_count),
+    playerId: row.champion_player_id,
+    displayName: row.champion_display_name,
+    jobId: row.champion_job_id,
+    rating: Number(row.champion_rating),
+    seasonScore: Number(row.champion_score),
+  })) });
+}
+
+async function handleArenaRewards(request, env, gameId, playerId) {
+  if (gameId !== GAME_ID) return json(request, { error: 'unknown-game' }, { status: 404 });
+  const auth = await authenticateOwner(request, env.PUBLIC_PLAYER_DB, gameId, playerId);
+  if (!auth.ok) return json(request, { error: auth.error }, { status: auth.status });
+  await finalizeArenaPastSeasons(env.PUBLIC_PLAYER_DB, gameId, arenaSeasonKey(Date.now()), Date.now());
+  const rows = await env.PUBLIC_PLAYER_DB.prepare(`
+    SELECT season_key, rank, tier_id, reward_gold, reward_gems, master_token,
+      champion_bonus_gold, champion_bonus_gems, receipt_id
+    FROM arena_season_results
+    WHERE game_id = ? AND player_id = ? AND claimed_at_ms IS NULL
+    ORDER BY season_key ASC
+  `).bind(gameId, playerId).all();
+  return json(request, { rewards: (rows.results ?? []).map((row) => ({
+    receiptId: row.receipt_id,
+    seasonKey: row.season_key,
+    rank: Number(row.rank),
+    tierId: row.tier_id,
+    gold: Number(row.reward_gold) + Number(row.champion_bonus_gold),
+    gems: Number(row.reward_gems) + Number(row.champion_bonus_gems),
+    baseGold: Number(row.reward_gold),
+    baseGems: Number(row.reward_gems),
+    championBonusGold: Number(row.champion_bonus_gold),
+    championBonusGems: Number(row.champion_bonus_gems),
+    grantsMasterToken: Number(row.master_token) !== 0,
+    champion: Number(row.champion_bonus_gold) > 0 || Number(row.champion_bonus_gems) > 0,
+  })) });
+}
+
+async function handleArenaRewardAck(request, env, gameId, playerId) {
+  if (gameId !== GAME_ID) return json(request, { error: 'unknown-game' }, { status: 404 });
+  const auth = await authenticateOwner(request, env.PUBLIC_PLAYER_DB, gameId, playerId);
+  if (!auth.ok) return json(request, { error: auth.error }, { status: auth.status });
+  const parsed = await readSmallJson(request, 512);
+  if (parsed.error || typeof parsed.value?.receiptId !== 'string' || parsed.value.receiptId.length > 200) {
+    return json(request, { error: 'invalid-receipt-id' }, { status: 400 });
+  }
+  const row = await env.PUBLIC_PLAYER_DB.prepare(`
+    SELECT receipt_id, claimed_at_ms FROM arena_season_results
+    WHERE game_id = ? AND player_id = ? AND receipt_id = ?
+  `).bind(gameId, playerId, parsed.value.receiptId).first();
+  if (row === null) return json(request, { error: 'reward-not-found' }, { status: 404 });
+  if (row.claimed_at_ms === null) {
+    await env.PUBLIC_PLAYER_DB.prepare(`
+      UPDATE arena_season_results SET claimed_at_ms = ?
+      WHERE game_id = ? AND player_id = ? AND receipt_id = ? AND claimed_at_ms IS NULL
+    `).bind(Date.now(), gameId, playerId, parsed.value.receiptId).run();
+  }
+  return json(request, { receiptId: parsed.value.receiptId, acknowledged: true });
 }
 
 async function humanArenaOpponent(db, attacker, nowMs, dayKey) {
@@ -672,6 +806,9 @@ export default {
     const arena = arenaRoute(url.pathname);
     const route = publicPlayerRoute(url.pathname);
     try {
+      if (arena?.kind === 'arena-hall' && request.method === 'GET') return await handleArenaHall(request, env, arena.gameId);
+      if (arena?.kind === 'arena-rewards' && request.method === 'GET') return await handleArenaRewards(request, env, arena.gameId, arena.playerId);
+      if (arena?.kind === 'arena-reward-ack' && request.method === 'POST') return await handleArenaRewardAck(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-player' && request.method === 'POST') return await handleArenaRegister(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-player' && request.method === 'GET') return await handleArenaGet(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-player' && request.method === 'DELETE') return await handleArenaDelete(request, env, arena.gameId, arena.playerId);

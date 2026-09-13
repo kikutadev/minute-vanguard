@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit';
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
-import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
-import { arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
+import type { ArenaBattleResult, ArenaHallEntry, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView, ArenaSeasonRewardReceipt } from '../application/arena-contract';
+import { ARENA_TIERS, arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -26,6 +26,7 @@ import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVangua
 import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
   LOGIN_BONUS_REWARDS,
+  applyArenaSeasonReward,
   activateRareGuarantee,
   activateBattleBoost,
   advanceFromWallClock,
@@ -116,7 +117,7 @@ import { getMinuteVanguardOnlineClient, type PublicLeaderboardMetric } from './p
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
-type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | 'tap-game' | 'mimic-bank' | null;
+type Modal = 'mission' | 'job' | 'menu' | 'presents' | 'orb-combine' | 'login' | 'tap-game' | 'mimic-bank' | null;
 type NoticePresentation = PresentationQueueItem & Readonly<{ text: string }>;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
@@ -468,7 +469,21 @@ export function MinuteVanguardApp() {
         else commit(result.state, `ミミック銀行：${result.state.gameData.lastMimicBankResult?.returnedGold.toLocaleString() ?? 0}G 戻りました`);
       }} />}
       {modal === 'tap-game' && <MonsterTapGame state={state} onClose={() => setModal(null)} />}
-      {modal === 'menu' && <MenuModal loginAvailable={loginBonusPreview(state).available} onLogin={() => setModal('login')} onClose={() => setModal(null)} onReset={async () => {
+      {modal === 'presents' && <PresentsModal state={state} onClose={() => setModal(null)} onClaim={async (reward) => {
+        const result = applyArenaSeasonReward(stateRef.current ?? state, reward);
+        if (!result.accepted) { setNotice('シーズン報酬を適用できませんでした'); return false; }
+        stateRef.current = result.state; setState(result.state);
+        await session.save(result.state);
+        try {
+          await getMinuteVanguardOnlineClient().acknowledgeArenaSeasonReward(reward.receiptId);
+          setNotice(`シーズン報酬：${reward.gold.toLocaleString()}G / ${reward.gems}💎`);
+          return true;
+        } catch {
+          setNotice('報酬は保存済みです。サーバー同期は次回再試行します');
+          return false;
+        }
+      }} />}
+      {modal === 'menu' && <MenuModal loginAvailable={loginBonusPreview(state).available} onLogin={() => setModal('login')} onPresents={() => setModal('presents')} onClose={() => setModal(null)} onReset={async () => {
         if (!window.confirm('セーブデータを削除して最初から始めますか？')) return;
         const reset = await session.reset();
         commit(reset, '最初から始めました');
@@ -545,6 +560,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   const [arena, setArena] = useState<ArenaPlayerView | null>(null);
   const [leaderboard, setLeaderboard] = useState<readonly ArenaLeaderboardEntry[]>([]);
   const [history, setHistory] = useState<readonly ArenaHistoryEntry[]>([]);
+  const [hall, setHall] = useState<readonly ArenaHallEntry[]>([]);
   const [battle, setBattle] = useState<ArenaBattleResult | null>(null);
   const [gearOpen, setGearOpen] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -553,9 +569,10 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
 
   const reload = async () => {
     const online = getMinuteVanguardOnlineClient();
-    const [me, board] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10)]);
+    const [me, board, hallEntries] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10), online.listArenaHall()]);
     setArena(me);
     setLeaderboard(board);
+    setHall(hallEntries);
     setHistory(me === null ? [] : await online.listArenaHistory());
   };
 
@@ -564,10 +581,10 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     void (async () => {
       try {
         const online = getMinuteVanguardOnlineClient();
-        const [me, board] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10)]);
+        const [me, board, hallEntries] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10), online.listArenaHall()]);
         if (cancelled) return;
         setArena(me);
-        setLeaderboard(board);
+        setLeaderboard(board); setHall(hallEntries);
         if (me !== null) setHistory(await online.listArenaHistory());
       } catch {
         if (!cancelled) setError('アリーナサーバーへ接続できません');
@@ -577,6 +594,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     })();
     return () => { cancelled = true; };
   }, []);
+
 
   const join = async () => {
     setBusy(true); setError(null);
@@ -646,14 +664,18 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   };
 
   if (loading) return <div className="arena-loading">アリーナ情報を読み込んでいます…</div>;
-  if (arena === null) return <div className="arena-join-card">
-    <span className="arena-crown">♛</span>
-    <h2>WEEKLY ARENA</h2>
-    <p>週ごとのシーズンスコアで王冠を争います。対戦・レート・待ち時間はサーバーが決定します。</p>
-    <div className="arena-security-note"><strong>公平性</strong><span>ローカルのLv・Gold・装備数値は勝敗に使いません。現在職業だけを戦闘スタイルとして使い、全員をArena基準へ正規化します。</span></div>
-    {error && <p className="arena-error">{error}</p>}
-    <button className="arena-join-button" disabled={busy} onClick={() => void join()}>{busy ? '登録中…' : 'アリーナに参加する'}</button>
-    <small>参加すると、名前・職業・Arena戦績・レートがArena内で公開されます。通常の公開プロフィール設定とは別です。</small>
+  if (arena === null) return <div className="arena-view">
+    <div className="arena-join-card">
+      <span className="arena-crown">♛</span>
+      <h2>WEEKLY ARENA</h2>
+      <p>週ごとのシーズンスコアで王冠を争います。対戦・レート・待ち時間はサーバーが決定します。</p>
+      <div className="arena-security-note"><strong>公平性</strong><span>ローカルのLv・Gold・装備数値は勝敗に使いません。現在職業だけを戦闘スタイルとして使い、全員をArena基準へ正規化します。</span></div>
+      {error && <p className="arena-error">{error}</p>}
+      <button className="arena-join-button" disabled={busy} onClick={() => void join()}>{busy ? '登録中…' : 'アリーナに参加する'}</button>
+      <small>参加すると、名前・職業・Arena戦績・レートがArena内で公開されます。通常の公開プロフィール設定とは別です。</small>
+    </div>
+    <h3 className="arena-heading">殿堂 · 歴代Champion</h3>
+    <ArenaHall entries={hall} />
   </div>;
 
   const cooldownSec = Math.min(60, Math.max(0, Math.ceil((arena.nextAttackAtMs - state.lastWallClockMs) / 1_000)));
@@ -668,7 +690,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         <div><small>RATE</small><strong>{arena.rating.toLocaleString()}</strong><em>BEST {arena.bestRating.toLocaleString()}</em></div>
         <div><small>RECORD</small><strong>{arena.wins}勝 {arena.losses}敗</strong><em>引分 {arena.draws}</em></div>
       </div>
-      <div className="arena-score-split"><span>攻撃 {arena.seasonAttackScore}</span><span>防衛 {arena.seasonDefenseScore}</span><span>{jobDisplayName(arena.jobId)}型</span></div>
+      <div className="arena-score-split"><span>攻撃 {arena.seasonAttackScore}</span><span>防衛 {arena.seasonDefenseScore}</span><span>{jobDisplayName(arena.jobId)}型</span>{state.gameData.arenaMasterCrestOwned && <span className="arena-master-crest">◇ 頂の証</span>}</div>
     </div>
 
     {champion && <div className="arena-champion"><span>♛ CHAMPION</span><strong>{champion.displayName}</strong><em>{champion.seasonScore.toLocaleString()} pt · Rate {champion.rating}</em></div>}
@@ -727,9 +749,19 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
       <span>{entry.role === 'attack' ? '攻' : '守'}{entry.matchType === 'challenge' ? '指' : ''}</span><strong>{entry.opponentName}<small>{jobDisplayName(entry.opponentJobId)}</small></strong><b>{entry.outcome === 'win' ? '勝' : entry.outcome === 'loss' ? '敗' : '分'}</b><em>{entry.ratingDelta >= 0 ? '+' : ''}{entry.ratingDelta}R / +{entry.scoreGain}pt</em>
     </div>)}</div>
 
+    <h3 className="arena-heading">殿堂 · 歴代Champion</h3>
+    <ArenaHall entries={hall} />
+
     <button className="arena-leave" disabled={busy} onClick={() => void leave()}>アリーナ登録を削除</button>
     {battle !== null && <ArenaBattleModal result={battle} onClose={() => setBattle(null)} />}
   </div>;
+}
+
+
+function ArenaHall({ entries }: Readonly<{ entries: readonly ArenaHallEntry[] }>) {
+  return <div className="arena-hall">{entries.length === 0 ? <p>確定済みの歴代Championはまだいません。</p> : entries.map((entry) => <div key={entry.seasonKey}>
+    <b>♛</b><span><strong>{entry.displayName}</strong><small>SEASON {entry.seasonKey} · {jobDisplayName(entry.jobId)}</small></span><em>{entry.seasonScore.toLocaleString()} pt</em>
+  </div>)}</div>;
 }
 
 function ArenaBattleModal({ result, onClose }: Readonly<{ result: ArenaBattleResult; onClose: () => void }>) {
@@ -1532,8 +1564,71 @@ function MonsterTapGame(props: Readonly<{ state: MinuteVanguardState; onClose: (
   </ModalFrame>;
 }
 
-function MenuModal(props: Readonly<{ loginAvailable: boolean; onLogin: () => void; onClose: () => void; onReset: () => void }>) {
-  return <ModalFrame title="メニュー" onClose={props.onClose}><div className="menu-list"><button className={props.loginAvailable ? 'attention' : ''} onClick={props.onLogin}>🎁 ログインボーナス {props.loginAvailable ? '· 受取可能' : ''}</button><button>？ 遊び方</button><button>💡 アイデア・要望</button><button>📜 アップデート履歴</button><button>⚙ 設定</button><button className="danger-button" onClick={props.onReset}>↻ データをリセット</button></div></ModalFrame>;
+function PresentsModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onClaim: (reward: ArenaSeasonRewardReceipt) => Promise<boolean> }>) {
+  const [rewards, setRewards] = useState<readonly ArenaSeasonRewardReceipt[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyReceiptId, setBusyReceiptId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const reload = async () => {
+    try {
+      setError(null);
+      const next = await getMinuteVanguardOnlineClient().listArenaSeasonRewards();
+      setRewards(next);
+    } catch {
+      setError('プレゼントを読み込めませんでした');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void getMinuteVanguardOnlineClient().listArenaSeasonRewards().then((next) => {
+      if (cancelled) return;
+      setRewards(next);
+      setLoading(false);
+    }).catch(() => {
+      if (cancelled) return;
+      setError('プレゼントを読み込めませんでした');
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const claim = async (reward: ArenaSeasonRewardReceipt) => {
+    if (busyReceiptId !== null) return;
+    setBusyReceiptId(reward.receiptId); setError(null);
+    try {
+      const acknowledged = await props.onClaim(reward);
+      if (acknowledged) setRewards((current) => current.filter((item) => item.receiptId !== reward.receiptId));
+      else await reload();
+    } catch {
+      setError('プレゼントを受け取れませんでした');
+    } finally {
+      setBusyReceiptId(null);
+    }
+  };
+
+  return <ModalFrame title="プレゼント" onClose={props.onClose}>
+    <div className="present-box">
+      <div className="present-box-head"><span>🎁</span><div><strong>受取箱</strong><small>サーバーで確定した報酬をここで受け取ります</small></div></div>
+      {loading ? <p className="present-empty">プレゼントを確認しています…</p> : error !== null ? <><p className="arena-error">{error}</p><button className="present-retry" onClick={() => void reload()}>再読み込み</button></> : rewards.length === 0 ? <p className="present-empty">受け取れるプレゼントはありません。</p> : rewards.map((reward) => {
+        const tier = ARENA_TIERS.find((item) => item.id === reward.tierId);
+        return <div className="arena-season-reward present-reward" key={reward.receiptId}>
+          <div><span>ARENA · SEASON {reward.seasonKey}</span><strong>{reward.champion ? '♛ 週間王者' : `#${reward.rank}`} · {tier?.displayName ?? reward.tierId}</strong></div>
+          <p><b>◉ {reward.gold.toLocaleString()}G</b><b>💎 {reward.gems}</b>{reward.grantsMasterToken && <b>◇ 頂の証</b>}</p>
+          <button disabled={busyReceiptId !== null} onClick={() => void claim(reward)}>{busyReceiptId === reward.receiptId ? '受取中…' : '受け取る'}</button>
+          <small>未受取のシーズン報酬は次シーズンへ持ち越されます。報酬額はMinute Vanguard独自バランスです。</small>
+        </div>;
+      })}
+      {props.state.gameData.arenaMasterCrestOwned && <div className="present-owned-cosmetic"><span>◇</span><div><strong>頂の証</strong><small>永久所持 · Arena Master到達報酬</small></div></div>}
+    </div>
+  </ModalFrame>;
+}
+
+function MenuModal(props: Readonly<{ loginAvailable: boolean; onLogin: () => void; onPresents: () => void; onClose: () => void; onReset: () => void }>) {
+  return <ModalFrame title="メニュー" onClose={props.onClose}><div className="menu-list"><button onClick={props.onPresents}>🎁 プレゼント</button><button className={props.loginAvailable ? 'attention' : ''} onClick={props.onLogin}>📅 ログインボーナス {props.loginAvailable ? '· 受取可能' : ''}</button><button>？ 遊び方</button><button>💡 アイデア・要望</button><button>📜 アップデート履歴</button><button>⚙ 設定</button><button className="danger-button" onClick={props.onReset}>↻ データをリセット</button></div></ModalFrame>;
 }
 
 function ModalFrame(props: Readonly<{ title: string; onClose: () => void; children: React.ReactNode }>) {

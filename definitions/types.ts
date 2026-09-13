@@ -254,6 +254,7 @@ export type MinuteVanguardGameData = Readonly<{
   loginBonus: LoginBonusState;
   newAchievementIds: readonly string[];
   selectedAchievementId: string | null;
+  arenaMasterCrestOwned: boolean;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;

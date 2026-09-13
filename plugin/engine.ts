@@ -267,6 +267,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       loginBonus: { lastClaimDayKey: null, streakDay: 0 },
       newAchievementIds: [],
       selectedAchievementId: null,
+      arenaMasterCrestOwned: false,
     },
   };
 }
@@ -291,6 +292,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         loginBonus: state.gameData.loginBonus ?? { lastClaimDayKey: null, streakDay: 0 },
         newAchievementIds: state.gameData.newAchievementIds ?? [],
         selectedAchievementId: state.gameData.selectedAchievementId ?? null,
+        arenaMasterCrestOwned: state.gameData.arenaMasterCrestOwned ?? false,
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
         mimicBankGold: state.gameData.mimicBankGold ?? 0,
@@ -1962,6 +1964,29 @@ export function loginBonusPreview(state: MinuteVanguardState): LoginBonusPreview
   }
   const reward = LOGIN_BONUS_REWARDS[day - 1] ?? LOGIN_BONUS_REWARDS[0];
   return { available: true, day: reward.day, gold: reward.gold, gems: reward.gems, dayKey };
+}
+
+export function applyArenaSeasonReward(
+  state: MinuteVanguardState,
+  reward: Readonly<{ receiptId: string; gold: number; gems: number; seasonKey: string; grantsMasterToken: boolean; champion: boolean }>,
+): CommandResult<MinuteVanguardState, 'invalid-external-reward'> {
+  if (reward.receiptId.length === 0 || !Number.isSafeInteger(reward.gold) || reward.gold < 0 || !Number.isSafeInteger(reward.gems) || reward.gems < 0) {
+    return reject(state, 'invalid-external-reward');
+  }
+  if (state.recentExternalRewardGrantIds.includes(reward.receiptId)) {
+    return accept(state, [event(state, 'arenaSeasonRewardAlreadyApplied', reward.receiptId, { seasonKey: reward.seasonKey })]);
+  }
+  let nextState = grantCurrency(state, ids.currency.gold, reward.gold, `${reward.receiptId}.gold`);
+  nextState = grantCurrency(nextState, ids.currency.gem, reward.gems, `${reward.receiptId}.gem`);
+  nextState = {
+    ...nextState,
+    recentExternalRewardGrantIds: [...nextState.recentExternalRewardGrantIds, reward.receiptId].slice(-100),
+    gameData: { ...nextState.gameData, arenaMasterCrestOwned: nextState.gameData.arenaMasterCrestOwned || reward.grantsMasterToken },
+  };
+  return accept(nextState, [event(nextState, 'arenaSeasonRewardApplied', reward.receiptId, {
+    seasonKey: reward.seasonKey, gold: reward.gold, gems: reward.gems,
+    grantsMasterToken: reward.grantsMasterToken, champion: reward.champion,
+  })]);
 }
 
 export function claimLoginBonus(

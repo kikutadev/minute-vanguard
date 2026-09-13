@@ -85,3 +85,30 @@ export type ArenaHistoryEntry = Readonly<{
   ratingDelta: number;
   scoreGain: number;
 }>;
+
+
+export type ArenaSeasonRewardReceipt = Readonly<{
+  receiptId: string;
+  seasonKey: string;
+  rank: number;
+  tierId: string;
+  gold: number;
+  gems: number;
+  baseGold: number;
+  baseGems: number;
+  championBonusGold: number;
+  championBonusGems: number;
+  grantsMasterToken: boolean;
+  champion: boolean;
+}>;
+
+export type ArenaHallEntry = Readonly<{
+  seasonKey: string;
+  finalizedAtMs: number;
+  participantCount: number;
+  playerId: string;
+  displayName: string;
+  jobId: ArenaJobId;
+  rating: number;
+  seasonScore: number;
+}>;
