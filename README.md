@@ -36,7 +36,7 @@ Implemented in the current build:
 - next-battle Battle Boost (10 Gem, EXP/Gold ×2) and reward multiplier breakdown
 - IndexedDB save and wall-clock cooldown progression
 - same-core headless simulator
-- GitHub Pages workflow that uploads `dist/` only
+- local `pnpm deploy:pages` publishing that pushes only built `dist/` contents to the `gh-pages` branch; no GitHub Actions required
 - local Cloudflare Worker + D1 harness for public-player directory QA
 
 ## Kit boundary
