@@ -11,6 +11,7 @@ import {
   createRngStreams,
   equipItem,
   equipProgressiveTitle,
+  evaluateAchievements,
   nextRandom,
   previewCooldown,
   progressiveTitleLevelFromCopies,
@@ -27,6 +28,7 @@ import {
   updateProgressiveTitleLevel,
   type CommandResult,
   type CooldownPreview,
+  type ConditionContext,
   type CurrencyDefinition,
   type DomainEvent,
   type InventoryState,
@@ -59,6 +61,7 @@ import {
   type TitleEffectFamily,
 } from '../definitions/title-definitions';
 import { duplicateSnackRewardByRarity, gachaPetDefinitions, type GachaPetSpecialEffect } from '../definitions/gacha-pet-definitions';
+import { soloAchievementDefinitions, type SoloAchievementDefinition, type SoloAchievementMetric } from '../definitions/achievement-definitions';
 import type {
   BattleResult,
   BattleTurn,
@@ -256,6 +259,8 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       titleShop: { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), createProgressiveTitleCollection()), purchasedTitleIds: [] },
       missionProgress: createDailyMissionProgress(jstDayKey(nowMs)),
       loginBonus: { lastClaimDayKey: null, streakDay: 0 },
+      newAchievementIds: [],
+      selectedAchievementId: null,
     },
   };
 }
@@ -275,6 +280,8 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
         missionProgress: normalizeDailyMissionProgress(state.gameData.missionProgress, jstDayKey(nowMs)),
         loginBonus: state.gameData.loginBonus ?? { lastClaimDayKey: null, streakDay: 0 },
+        newAchievementIds: state.gameData.newAchievementIds ?? [],
+        selectedAchievementId: state.gameData.selectedAchievementId ?? null,
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
@@ -310,7 +317,7 @@ export function advanceFromWallClock(
   policy: OfflineTimePolicy = {},
 ): Readonly<{ state: MinuteVanguardState; appliedOfflineSec: number }> {
   const elapsed = resolveOfflineElapsed(state.lastWallClockMs, currentWallClockMs, policy);
-  if (elapsed.observedElapsedSec === 0) return { state, appliedOfflineSec: 0 };
+  if (elapsed.observedElapsedSec === 0) return { state: evaluateSoloAchievements(state).state, appliedOfflineSec: 0 };
   const snackAccrual = accruePetSnacks(state.gameData.petSnacks, state.gameData.petSnackRemainderSec, elapsed.appliedElapsedSec);
   let nextState: MinuteVanguardState = {
     ...state,
@@ -334,7 +341,83 @@ export function advanceFromWallClock(
       },
     };
   }
-  return { state: nextState, appliedOfflineSec: elapsed.appliedElapsedSec };
+  return { state: evaluateSoloAchievements(nextState).state, appliedOfflineSec: elapsed.appliedElapsedSec };
+}
+
+export function soloAchievementMetricValue(state: MinuteVanguardState, metricId: SoloAchievementMetric): number {
+  switch (metricId) {
+    case 'battles': return state.gameData.totalBattles;
+    case 'wins': return state.gameData.victories;
+    case 'discoveries': return state.gameData.discoveredEnemyIds.length;
+    case 'monsterLevel': return unlockedMonsterLevel(state);
+    case 'jobChanges': return state.gameData.player.totalJobChanges;
+    case 'pets': return state.gameData.ownedPetEnemyIds.length + state.gameData.ownedGachaPetIds.length;
+    case 'mutatedPets': return state.gameData.mutatedPetEnemyIds.length;
+    case 'training': return totalPetTrainingLevels(state);
+    case 'orbs': return Object.values(state.gameData.inventory).filter((item) => item.data?.kind === 'orb').length;
+    case 'orbRank': return Object.values(state.gameData.inventory).reduce((highest, item) => item.data?.orbRank === undefined ? highest : Math.max(highest, orbRanks.indexOf(item.data.orbRank) + 1), 0);
+    case 'titleUnique': return Object.values(state.gameData.titles.copies).filter((copies) => copies > 0).length;
+    case 'titleMastered': return Object.values(state.gameData.titles.copies).filter((copies) => copies >= 15).length;
+    case 'gold': return goldBalance(state);
+    case 'playerLevel': return state.gameData.player.level;
+  }
+}
+
+function achievementConditionContext(state: MinuteVanguardState): ConditionContext {
+  return {
+    currencyBalance: (currencyId) => readCurrency(state.currencies, currencyId),
+    lifetimeCurrencyEarned: (currencyId) => GameNumber.deserialize(state.statistics.lifetimeCurrencyEarned[currencyId] ?? GameNumber.zero().serialize()),
+    producerCount: () => 0,
+    characterOwned: () => false,
+    activityProgress: (activityId) => soloAchievementMetricValue(state, activityId as SoloAchievementMetric),
+    achievementCompleted: (achievementId) => state.achievements[achievementId] === true,
+    unlockFlag: (flagId) => state.progressionFlags[flagId] === true,
+  };
+}
+
+export function evaluateSoloAchievements(state: MinuteVanguardState): Readonly<{ state: MinuteVanguardState; events: readonly DomainEvent[] }> {
+  const result = evaluateAchievements({
+    state,
+    definitions: soloAchievementDefinitions,
+    createConditionContext: achievementConditionContext,
+    grantRewards: (current) => current,
+  });
+  const unlockedIds = result.events.flatMap((entry) => typeof entry.payload?.achievementId === 'string' ? [entry.payload.achievementId] : []);
+  if (unlockedIds.length === 0) return result;
+  const nextState: MinuteVanguardState = {
+    ...result.state,
+    gameData: {
+      ...result.state.gameData,
+      newAchievementIds: [...new Set([...result.state.gameData.newAchievementIds, ...unlockedIds])],
+    },
+  };
+  return { state: nextState, events: result.events };
+}
+
+export function selectAchievementTitle(
+  state: MinuteVanguardState,
+  achievementId: string | null,
+): CommandResult<MinuteVanguardState, 'unknown-achievement' | 'not-earned'> {
+  if (achievementId === null) {
+    const nextState = state.gameData.selectedAchievementId === null ? state : { ...state, gameData: { ...state.gameData, selectedAchievementId: null } };
+    return accept(nextState, nextState === state ? [] : [event(nextState, 'achievementTitleCleared', 'none')]);
+  }
+  if (!soloAchievementDefinitions.some((definition) => definition.id === achievementId)) return reject(state, 'unknown-achievement');
+  if (state.achievements[achievementId] !== true) return reject(state, 'not-earned');
+  const nextState: MinuteVanguardState = { ...state, gameData: { ...state.gameData, selectedAchievementId: achievementId } };
+  return accept(nextState, [event(nextState, 'achievementTitleSelected', achievementId)]);
+}
+
+export function clearNewAchievementFlags(state: MinuteVanguardState): MinuteVanguardState {
+  if (state.gameData.newAchievementIds.length === 0) return state;
+  return { ...state, gameData: { ...state.gameData, newAchievementIds: [] } };
+}
+
+export function soloAchievementProgress(state: MinuteVanguardState, definition: SoloAchievementDefinition): Readonly<{ current: number; ratio: number; completed: boolean }> {
+  const observed = soloAchievementMetricValue(state, definition.metricId);
+  const completed = state.achievements[definition.id] === true;
+  const current = completed ? Math.max(observed, definition.target) : observed;
+  return { current, ratio: completed ? 1 : Math.min(1, current / definition.target), completed };
 }
 
 export function battleCooldown(state: MinuteVanguardState): CooldownPreview {

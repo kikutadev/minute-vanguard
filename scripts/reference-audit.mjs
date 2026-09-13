@@ -13,6 +13,7 @@ const checks = [
   ['guide', 'progression.stats', ['HP / ATK / DEF / MAT / MDF / LUK']],
   ['guide', 'progression.jobChange', ['Lv.30', '転職']],
   ['guide', 'monsters.roster', ['Lv1〜13', '全650体']],
+  ['guide', 'achievements.core', ['称号', '300種以上', '1つ選んでプレイヤー名の上に表示']],
   ['patchnotes', 'monsters.sequentialUnlock', ['Lv9モンスターを倒すとLv10', 'Lv10モンスターを倒すと挑戦', 'Lv11モンスターを倒すと挑戦', 'Lv12モンスターを倒すと挑戦']],
   ['patchnotes', 'battle.cooldownPastime', ['モンスター叩き', '6マス', '3点減', '報酬はなく', '自己ベストはこの端末にだけ']],
   ['guide', 'goldBags.core', ['小銭袋', '30', 'ずだ袋', '100', '大金庫', '300', '直近10戦', '2回以上']],

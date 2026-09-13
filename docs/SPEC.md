@@ -141,6 +141,8 @@ The codex is split by monster level and records encounters, defeats, mutated enc
 
 During an active battle cooldown, the player can open a reward-free `Monster Tap` pastime. Six cells cycle through monsters from unlocked levels plus occasional hero decoys. Correct monster taps score +1; hero or empty-cell taps cost 3 points. The best score is local-device-only and opening/closing the pastime has no effect on progression or rewards.
 
+The solo collection also includes 104 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
+
 ## Pets
 
 A monster becomes capture-eligible after 30 successful defeats. Every later victory against that monster rolls 1% capture. One normal copy of each monster can be owned. Capturing its mutated form is tracked separately and adds another +1% level-up growth bonus without increasing the owned-pet count.

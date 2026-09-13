@@ -217,6 +217,8 @@ export type MinuteVanguardGameData = Readonly<{
   titleShop: TitleShopState;
   missionProgress: DailyMissionProgress;
   loginBonus: LoginBonusState;
+  newAchievementIds: readonly string[];
+  selectedAchievementId: string | null;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;

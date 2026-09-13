@@ -16,6 +16,7 @@ import {
   specialEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
+import { soloAchievementCategoryLabels, soloAchievementDefinitions, type SoloAchievementCategory } from '../definitions/achievement-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
 import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
@@ -33,6 +34,7 @@ import {
   buyDailyTitle,
   changeJob,
   claimDailyMission,
+  clearNewAchievementFlags,
   claimLoginBonus,
   combineOrb,
   cooldownSkipCost,
@@ -82,8 +84,10 @@ import {
   setEquippedTitleLevel,
   timeBoostRemainingSec,
   setActivePet,
+  selectAchievementTitle,
   setMonsterLevel,
   skipBattleCooldown,
+  soloAchievementProgress,
   toggleOrbFavorite,
   toggleOrbLock,
   toggleTitleFavorite,
@@ -166,6 +170,7 @@ export function MinuteVanguardApp() {
   const gold = Math.floor(goldBalance(state));
   const gems = Math.floor(gemBalance(state));
   const expNeeded = expRequiredForNextLevel(state.gameData.player.level);
+  const activeAchievement = soloAchievementDefinitions.find((definition) => definition.id === state.gameData.selectedAchievementId && state.achievements[definition.id] === true);
   const selectedItem = selectedItemId === null ? undefined : state.gameData.inventory[selectedItemId];
 
   const onFight = () => {
@@ -198,6 +203,7 @@ export function MinuteVanguardApp() {
         <div className="profile-row">
           <div className="hero-portrait" aria-hidden="true">{job.id === 'job.mage' ? '🧙' : job.id === 'job.priest' ? '🪄' : '🧑‍🚀'}</div>
           <div className="profile-main">
+            {activeAchievement && <div className="profile-achievement-title">◆ {activeAchievement.displayName}</div>}
             <div className="name-line"><strong>{state.gameData.player.name}</strong><span>{job.displayName}</span><b>Lv.{state.gameData.player.level}</b></div>
             <div className="meter hp-meter"><span style={{ width: `${Math.min(100, state.gameData.player.currentHp / stats.hp * 100)}%` }} /><em>HP {state.gameData.player.currentHp.toLocaleString()} / {stats.hp.toLocaleString()}</em></div>
             <div className="header-actions-row">
@@ -303,7 +309,7 @@ export function MinuteVanguardApp() {
           if (!result.accepted) setNotice(result.reason === 'not-enough-wins' ? 'ゴールド袋は直近のモンスター勝利が2回以上必要です' : result.reason === 'insufficient-gems' ? 'ジェムが足りません' : '購入できません');
           else commit(result.state, 'ゴールド袋を開けました');
         }} />}
-        {tab === 'collection' && <CollectionView state={state} />}
+        {tab === 'collection' && <CollectionView state={state} onAchievementsViewed={() => commit(clearNewAchievementFlags(state))} onSelectAchievement={(achievementId) => { const result = selectAchievementTitle(state, achievementId); if (!result.accepted) setNotice('未獲得の称号は表示できません'); else commit(result.state, achievementId === null ? '称号表示を外しました' : '表示する称号を変更しました'); }} />}
         {tab === 'ranking' && <RankingView state={state} />}
       </div>
 
@@ -547,38 +553,62 @@ function TimeBoostShop(props: Readonly<{ state: MinuteVanguardState; onBuy: (kin
   </div>;
 }
 
-function CollectionView({ state }: Readonly<{ state: MinuteVanguardState }>) {
+function CollectionView(props: Readonly<{ state: MinuteVanguardState; onAchievementsViewed: () => void; onSelectAchievement: (achievementId: string | null) => void }>) {
+  const { state } = props;
   const unlockedMaxLevel = unlockedMonsterLevel(state);
+  const [view, setView] = useState<'monsters' | 'achievements'>('monsters');
   const [monsterLevel, setCollectionMonsterLevel] = useState<number>(state.gameData.selectedMonsterLevel);
+  const [newAtOpen] = useState(() => new Set(state.gameData.newAchievementIds));
   const safeLevel = Math.min(monsterLevel, unlockedMaxLevel);
   const levelEnemies = enemies.filter((enemy) => enemy.monsterLevel === safeLevel);
   const discovered = levelEnemies.filter((enemy) => state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
   const kills = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.killCounts[enemy.id] ?? 0), 0);
   const encounters = levelEnemies.reduce((sum, enemy) => sum + (state.gameData.encounterCounts[enemy.id] ?? 0), 0);
+  const completedAchievements = soloAchievementDefinitions.filter((definition) => state.achievements[definition.id] === true).length;
+
+  const openAchievements = () => {
+    setView('achievements');
+    props.onAchievementsViewed();
+  };
+
   return <section className="page-section collection-page">
     <h1>コレクション</h1>
-    <div className="monster-level-tabs" aria-label="モンスターレベル">{Array.from({ length: 13 }, (_, index) => index + 1).map((level) => {
-      const unlocked = level <= unlockedMaxLevel;
-      const count = enemies.filter((enemy) => enemy.monsterLevel === level && state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
-      return <button key={level} className={safeLevel === level ? 'active' : ''} disabled={!unlocked} onClick={() => setCollectionMonsterLevel(level)}>Lv.{level}<small>{unlocked ? `${count}/50` : '🔒'}</small></button>;
-    })}</div>
-    <div className="collection-summary"><div><strong>{discovered}</strong><span>/ 50 発見</span></div><div><strong>{encounters}</strong><span>遭遇</span></div><div><strong>{kills}</strong><span>討伐</span></div></div>
-    <div className="encyclopedia-grid">
-      {levelEnemies.map((enemy) => {
-        const seen = state.gameData.discoveredEnemyIds.includes(enemy.id);
-        const enemyKills = state.gameData.killCounts[enemy.id] ?? 0;
-        const enemyEncounters = state.gameData.encounterCounts[enemy.id] ?? 0;
-        const mutatedEncounters = state.gameData.mutatedEncounterCounts[enemy.id] ?? 0;
-        const captured = state.gameData.ownedPetEnemyIds.includes(enemy.id);
-        return <article className={`monster-card ${seen ? '' : 'locked'} ${captured ? 'captured' : ''}`} key={enemy.id}>
-          <span className="monster-glyph">{seen ? enemy.glyph : '?'}</span>
-          <strong>{seen ? enemy.displayName : '???'}</strong>
-          <small>{seen ? enemy.rarity.toUpperCase() : '未発見'}</small>
-          {seen && <div className="monster-record"><span>遭遇 {enemyEncounters}</span><span>討伐 {enemyKills}</span>{mutatedEncounters > 0 && <span>変異 {mutatedEncounters}</span>}</div>}
-          {seen && <em>{captured ? '✓ 捕獲済' : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
-        </article>;
+    <div className="collection-mode-tabs"><button className={view === 'monsters' ? 'active' : ''} onClick={() => setView('monsters')}>図鑑</button><button className={view === 'achievements' ? 'active' : ''} onClick={openAchievements}>称号{state.gameData.newAchievementIds.length > 0 && <em>NEW {state.gameData.newAchievementIds.length}</em>}</button></div>
+    {view === 'achievements' ? <div className="achievement-view">
+      <div className="achievement-summary"><strong>{completedAchievements}</strong><span>/ {soloAchievementDefinitions.length} 獲得</span><div className="achievement-summary-meter"><i style={{ width: `${completedAchievements / soloAchievementDefinitions.length * 100}%` }} /></div></div>
+      {(Object.keys(soloAchievementCategoryLabels) as SoloAchievementCategory[]).map((category) => {
+        const definitions = soloAchievementDefinitions.filter((definition) => definition.category === category);
+        const completed = definitions.filter((definition) => state.achievements[definition.id] === true).length;
+        return <section className="achievement-group" key={category}><header><strong>{soloAchievementCategoryLabels[category]}</strong><span>{completed}/{definitions.length}</span></header><div className="achievement-list">{definitions.map((definition) => {
+          const progress = soloAchievementProgress(state, definition);
+          const isNew = newAtOpen.has(definition.id);
+          return <article key={definition.id} className={`achievement-row ${progress.completed ? 'completed' : ''} ${state.gameData.selectedAchievementId === definition.id ? 'selected' : ''}`}><span className="achievement-medal">{progress.completed ? '◆' : '◇'}</span><div><strong>{definition.displayName}{isNew && <em>NEW</em>}</strong><small>{definition.description}</small><div className="achievement-progress"><i style={{ width: `${progress.ratio * 100}%` }} /></div><small>{Math.min(progress.current, definition.target).toLocaleString()} / {definition.target.toLocaleString()}</small></div>{progress.completed && <button className="achievement-select" onClick={() => props.onSelectAchievement(state.gameData.selectedAchievementId === definition.id ? null : definition.id)}>{state.gameData.selectedAchievementId === definition.id ? '表示中' : '表示'}</button>}</article>;
+        })}</div></section>;
       })}
-    </div>
+    </div> : <>
+      <div className="monster-level-tabs" aria-label="モンスターレベル">{Array.from({ length: 13 }, (_, index) => index + 1).map((level) => {
+        const unlocked = level <= unlockedMaxLevel;
+        const count = enemies.filter((enemy) => enemy.monsterLevel === level && state.gameData.discoveredEnemyIds.includes(enemy.id)).length;
+        return <button key={level} className={safeLevel === level ? 'active' : ''} disabled={!unlocked} onClick={() => setCollectionMonsterLevel(level)}>Lv.{level}<small>{unlocked ? `${count}/50` : '🔒'}</small></button>;
+      })}</div>
+      <div className="collection-summary"><div><strong>{discovered}</strong><span>/ 50 発見</span></div><div><strong>{encounters}</strong><span>遭遇</span></div><div><strong>{kills}</strong><span>討伐</span></div></div>
+      <div className="encyclopedia-grid">
+        {levelEnemies.map((enemy) => {
+          const seen = state.gameData.discoveredEnemyIds.includes(enemy.id);
+          const enemyKills = state.gameData.killCounts[enemy.id] ?? 0;
+          const enemyEncounters = state.gameData.encounterCounts[enemy.id] ?? 0;
+          const mutatedEncounters = state.gameData.mutatedEncounterCounts[enemy.id] ?? 0;
+          const captured = state.gameData.ownedPetEnemyIds.includes(enemy.id);
+          return <article className={`monster-card ${seen ? '' : 'locked'} ${captured ? 'captured' : ''}`} key={enemy.id}>
+            <span className="monster-glyph">{seen ? enemy.glyph : '?'}</span>
+            <strong>{seen ? enemy.displayName : '???'}</strong>
+            <small>{seen ? enemy.rarity.toUpperCase() : '未発見'}</small>
+            {seen && <div className="monster-record"><span>遭遇 {enemyEncounters}</span><span>討伐 {enemyKills}</span>{mutatedEncounters > 0 && <span>変異 {mutatedEncounters}</span>}</div>}
+            {seen && <em>{captured ? '✓ 捕獲済' : enemyKills >= 30 ? '捕獲解禁 · 1%' : `捕獲まで ${30 - enemyKills}`}</em>}
+          </article>;
+        })}
+      </div>
+    </>}
   </section>;
 }
 
