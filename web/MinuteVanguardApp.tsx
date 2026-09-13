@@ -3,7 +3,7 @@ import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit'
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
 import type { ArenaBattleResult, ArenaHallEntry, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView, ArenaSeasonRewardReceipt } from '../application/arena-contract';
-import { ARENA_TIERS, arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
+import { ARENA_SEASON_REWARDS, ARENA_TIERS, arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -563,6 +563,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   const [hall, setHall] = useState<readonly ArenaHallEntry[]>([]);
   const [battle, setBattle] = useState<ArenaBattleResult | null>(null);
   const [gearOpen, setGearOpen] = useState(false);
+  const [tierOpen, setTierOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -684,13 +685,27 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   const nextTierRemaining = arena.nextTierScore === null ? null : Math.max(0, arena.nextTierScore - arena.seasonScore);
   return <div className="arena-view">
     <div className="arena-season-card">
-      <div className="arena-season-head"><span>SEASON {arena.seasonKey}</span><b>#{arena.rank ?? '—'} {arena.tierName}</b></div>
+      <button className="arena-season-head arena-tier-toggle" onClick={() => setTierOpen((open) => !open)} aria-expanded={tierOpen}>
+        <span>SEASON {arena.seasonKey}<small>{tierOpen ? '階級報酬を閉じる' : '階級報酬を見る'}</small></span><b>#{arena.rank ?? '—'} {arena.tierName} <em>{tierOpen ? '▲' : '▼'}</em></b>
+      </button>
       <div className="arena-score-grid">
         <div><small>SEASON SCORE</small><strong>{arena.seasonScore.toLocaleString()}</strong>{nextTierRemaining !== null && <em>次 {arena.nextTierName} まで {nextTierRemaining}</em>}</div>
         <div><small>RATE</small><strong>{arena.rating.toLocaleString()}</strong><em>BEST {arena.bestRating.toLocaleString()}</em></div>
         <div><small>RECORD</small><strong>{arena.wins}勝 {arena.losses}敗</strong><em>引分 {arena.draws}</em></div>
       </div>
       <div className="arena-score-split"><span>攻撃 {arena.seasonAttackScore}</span><span>防衛 {arena.seasonDefenseScore}</span><span>{jobDisplayName(arena.jobId)}型</span>{state.gameData.arenaMasterCrestOwned && <span className="arena-master-crest">◇ 頂の証</span>}</div>
+      {tierOpen && <div className="arena-tier-ladder">
+        {ARENA_TIERS.map((tier) => {
+          const reward = ARENA_SEASON_REWARDS.find((item) => item.tierId === tier.id)!;
+          const reached = arena.seasonScore >= tier.threshold;
+          const current = arena.tierId === tier.id;
+          return <div key={tier.id} className={`${reached ? 'reached' : ''} ${current ? 'current' : ''}`}>
+            <span><b>{tier.displayName}</b><small>{tier.threshold.toLocaleString()} pt</small></span>
+            <em>◉ {reward.gold.toLocaleString()}G · 💎 {reward.gems}{reward.grantsMasterToken ? ' · ◇' : ''}</em>
+          </div>;
+        })}
+        <small className="arena-tier-note">シーズン終了時の最終階級で1回受取 · 個別報酬額はMinute Vanguard独自バランス</small>
+      </div>}
     </div>
 
     {champion && <div className="arena-champion"><span>♛ CHAMPION</span><strong>{champion.displayName}</strong><em>{champion.seasonScore.toLocaleString()} pt · Rate {champion.rating}</em></div>}
@@ -776,6 +791,7 @@ function ArenaBattleModal({ result, onClose }: Readonly<{ result: ArenaBattleRes
     <div className={`battle-reward-panel ${result.outcome === 'win' ? 'victory' : result.outcome === 'loss' ? 'defeat' : 'draw'}`}>
       <h2>{result.outcome === 'win' ? 'ARENA WIN' : result.outcome === 'loss' ? 'ARENA LOSS' : 'ARENA DRAW'}</h2>
       {result.matchType === 'challenge' && <p className="arena-challenge-note">指名対戦 · Gold移動なし</p>}
+      {result.promotion !== null && <div className="arena-promotion"><span>昇格！</span><strong>{result.promotion.tierName}</strong><small>シーズン報酬 ◉ {result.promotion.gold.toLocaleString()}G · 💎 {result.promotion.gems}{result.promotion.grantsMasterToken ? ' · ◇ 頂の証' : ''}</small></div>}
       {result.opponent.isBot ? <p className="arena-training-note">訓練相手のためRate・Season Scoreは変動しません</p> : <div className="reward-row"><span>RATE {result.ratingDelta >= 0 ? '+' : ''}{result.ratingDelta}</span><span>SEASON +{result.seasonScoreGain}</span><span>{result.weekendMultiplier === 2 ? 'WEEKEND ×2' : 'WEEKDAY'}</span></div>}
       <p>{result.opponent.isBot ? 'TRAINING' : `Rate ${result.ratingBefore} → ${result.ratingAfter}`} · Score {result.seasonScoreAfter}</p>
       <button className="modal-primary" onClick={onClose}>閉じる</button>

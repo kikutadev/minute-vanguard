@@ -132,6 +132,8 @@ describe('public reference parity locks', () => {
     expect(hero60Reference.arena.seasonRewards.gemMax).toBe(120);
     expect(hero60Reference.arena.seasonRewards.masterGrantsCrest).toBe(true);
     expect(hero60Reference.arena.seasonRewards.unclaimedCarriesForward).toBe(true);
+    expect(hero60Reference.arena.seasonRewards.tierTableInspectable).toBe(true);
+    expect(hero60Reference.arena.seasonRewards.promotionResultShowsReward).toBe(true);
     expect(hero60Reference.arena.seasonRewards.championRecordedInHall).toBe(true);
     expect(hero60Reference.arena.seasonRewards.exactTierAmountsPublic).toBe(false);
     expect(arenaPetAttackRate('job.tamer', 1)).toBeCloseTo((0.25 + hero60Reference.arena.pets.tamerBonusPoints / 100) * hero60Reference.arena.pets.tamerSecondMultiplier);

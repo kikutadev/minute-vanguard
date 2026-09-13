@@ -129,6 +129,7 @@ describe('MinuteVanguardOnlineClient', () => {
     expect(joined.rating).toBe(1000);
     const battle = await client.randomArenaBattle();
     expect(battle.battle.ratingDelta).toBe(16);
+    expect(battle.battle.promotion).toBeNull();
     expect(battle.arena.seasonScore).toBe(20);
     expect((await client.listArenaLeaderboard())[0]?.isChampion).toBe(true);
     expect((await client.listArenaHall())[0]?.displayName).toBe('勇者');

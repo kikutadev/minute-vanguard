@@ -123,9 +123,8 @@ export class MinuteVanguardOnlineClient {
   }
 
   async listLeaderboard(metric: PublicLeaderboardMetric, limit = 20): Promise<readonly PublicPlayerSnapshot<MinuteVanguardPublicData>[]> {
-    const url = new URL(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/leaderboards/${metric}`));
-    url.searchParams.set('limit', String(limit));
-    const response = await this.#fetcher(url.toString(), { headers: { accept: 'application/json' } });
+    const url = `${this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/leaderboards/${metric}`)}?limit=${encodeURIComponent(String(limit))}`;
+    const response = await this.#fetcher(url, { headers: { accept: 'application/json' } });
     const payload = await readJson(response);
     if (!response.ok) throw responseErrorFromPayload(response.status, payload);
     if (!isRecord(payload) || !Array.isArray(payload.players)) throw new PublicProfileOnlineError(502, 'invalid-leaderboard-envelope', payload);
@@ -265,9 +264,8 @@ export class MinuteVanguardOnlineClient {
   }
 
   async listArenaLeaderboard(limit = 10): Promise<readonly ArenaLeaderboardEntry[]> {
-    const url = new URL(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/leaderboard`));
-    url.searchParams.set('limit', String(limit));
-    const response = await this.#fetcher(url.toString(), { headers: { accept: 'application/json' } });
+    const url = `${this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/leaderboard`)}?limit=${encodeURIComponent(String(limit))}`;
+    const response = await this.#fetcher(url, { headers: { accept: 'application/json' } });
     const payload = await readJson(response);
     if (!response.ok) throw responseErrorFromPayload(response.status, payload);
     if (!isRecord(payload) || !Array.isArray(payload.entries)) throw new PublicProfileOnlineError(502, 'invalid-arena-leaderboard-envelope', payload);
@@ -385,7 +383,12 @@ function parseArenaBattle(value: unknown): ArenaBattleResult {
     || !Array.isArray(value.turns) || !isRecord(value.opponent) || !isArenaLoadout(value.opponent.loadout) || !isArenaPetLoadout(value.opponent.pets) || !Number.isFinite(value.ratingAfter) || !Number.isFinite(value.seasonScoreAfter)) {
     throw new PublicProfileOnlineError(502, 'invalid-arena-battle', value);
   }
-  return value as unknown as ArenaBattleResult;
+  const promotion = value.promotion ?? null;
+  if (promotion !== null && (!isRecord(promotion) || typeof promotion.tierId !== 'string' || typeof promotion.tierName !== 'string'
+    || !Number.isFinite(promotion.threshold) || !Number.isFinite(promotion.gold) || !Number.isFinite(promotion.gems) || typeof promotion.grantsMasterToken !== 'boolean')) {
+    throw new PublicProfileOnlineError(502, 'invalid-arena-promotion', value);
+  }
+  return { ...value, promotion } as unknown as ArenaBattleResult;
 }
 
 function parseArenaLeaderboardEntry(value: unknown): ArenaLeaderboardEntry {

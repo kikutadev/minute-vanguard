@@ -51,6 +51,15 @@ export type ArenaBattleOpponent = Readonly<{
 
 export type ArenaMatchType = 'random' | 'challenge';
 
+export type ArenaTierPromotion = Readonly<{
+  tierId: string;
+  tierName: string;
+  threshold: number;
+  gold: number;
+  gems: number;
+  grantsMasterToken: boolean;
+}>;
+
 export type ArenaBattleResult = Readonly<{
   battleId: string;
   matchType: ArenaMatchType;
@@ -70,6 +79,7 @@ export type ArenaBattleResult = Readonly<{
   ratingDelta: number;
   seasonScoreGain: number;
   seasonScoreAfter: number;
+  promotion: ArenaTierPromotion | null;
   weekendMultiplier: 1 | 2;
   nextAttackAtMs: number;
 }>;

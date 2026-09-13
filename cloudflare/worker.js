@@ -768,6 +768,13 @@ async function handleArenaBattle(request, env, gameId, playerId, matchType, chal
     simulation.combatVersion, seed, JSON.stringify(simulation)));
   await env.PUBLIC_PLAYER_DB.batch(statements);
   const updated = await getArenaRow(env.PUBLIC_PLAYER_DB, gameId, playerId);
+  const tierBefore = arenaTierForScore(Number(attacker.season_score));
+  const tierAfter = arenaTierForScore(Number(updated.season_score));
+  const promotionReward = tierAfter.threshold > tierBefore.threshold ? arenaSeasonRewardForScore(Number(updated.season_score)) : null;
+  const promotion = promotionReward === null ? null : {
+    tierId: tierAfter.id, tierName: tierAfter.displayName, threshold: tierAfter.threshold,
+    gold: promotionReward.gold, gems: promotionReward.gems, grantsMasterToken: promotionReward.grantsMasterToken,
+  };
   return json(request, {
     battle: {
       battleId, matchType, combatVersion: simulation.combatVersion, resolvedAtMs: nowMs, seed,
@@ -777,7 +784,7 @@ async function handleArenaBattle(request, env, gameId, playerId, matchType, chal
       turns: simulation.turns,
       opponent: { playerId: defenderId, displayName: defenderName, jobId: defenderJobId, ratingBefore: defenderRating, isBot, loadout: defenderLoadout, pets: defenderPets },
       ratingBefore: Number(attacker.rating), ratingAfter: Number(updated.rating), ratingDelta: ratingDeltas.attacker,
-      seasonScoreGain: attackScoreGain, seasonScoreAfter: Number(updated.season_score),
+      seasonScoreGain: attackScoreGain, seasonScoreAfter: Number(updated.season_score), promotion,
       weekendMultiplier: arenaWeekendMultiplier(nowMs), nextAttackAtMs,
     },
     arena: arenaView(updated, await arenaRank(env.PUBLIC_PLAYER_DB, updated)),

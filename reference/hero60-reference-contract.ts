@@ -51,6 +51,8 @@ export const hero60Reference = {
       masterGrantsCrest: true,
       unclaimedCarriesForward: true,
       claimSurface: 'menu-presents',
+      tierTableInspectable: true,
+      promotionResultShowsReward: true,
       championGetsBonus: true,
       championRecordedInHall: true,
       exactTierAmountsPublic: false,
