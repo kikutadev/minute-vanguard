@@ -6,10 +6,13 @@ import {
   advanceFromWallClock,
   buyPetSnacks,
   createInitialState,
+  fight,
   levelGrowthMultiplier,
   petSnackAutoRemainingSec,
+  petDisplayName,
   petTrainingCap,
   petTrainingGrowthBonusPct,
+  setPetNickname,
   trainPet,
 } from '../plugin/engine';
 
@@ -114,4 +117,46 @@ describe('pet training', () => {
     // 1 owned pet + 2% from training, with no job-change bonus yet.
     expect(levelGrowthMultiplier(trained)).toBeCloseTo(1.03);
   });
+
+  it('supports a twelve-character nickname and empty reset without changing training', () => {
+    const initial = withPet(createInitialState(0, 906));
+    const named = setPetNickname(initial, 'enemy.pebble', 'いしころ先輩DX');
+    expect(named.accepted).toBe(true);
+    if (!named.accepted) return;
+    expect(petDisplayName(named.state, 'enemy.pebble')).toBe('いしころ先輩DX');
+    expect(named.state.gameData.petTraining['enemy.pebble']?.trainingLevel).toBe(0);
+
+    const reset = setPetNickname(named.state, 'enemy.pebble', '   ');
+    expect(reset.accepted).toBe(true);
+    if (!reset.accepted) return;
+    expect(reset.state.gameData.petTraining['enemy.pebble']?.nickname).toBeNull();
+    expect(petDisplayName(reset.state, 'enemy.pebble')).toBe('妙に硬い石ころ');
+
+    const tooLong = setPetNickname(initial, 'enemy.pebble', '1234567890123');
+    expect(tooLong.accepted).toBe(false);
+    if (!tooLong.accepted) expect(tooLong.reason).toBe('nickname-too-long');
+  });
+
+  it('uses the nickname in pet combat logs', () => {
+    const initial = withPet(createInitialState(0, 907));
+    const named = setPetNickname({
+      ...initial,
+      gameData: {
+        ...initial.gameData,
+        player: {
+          ...initial.gameData.player,
+          currentHp: 5_000,
+          baseStats: { ...initial.gameData.player.baseStats, hp: 5_000, attack: 1, defense: 100, magicAttack: 1, magicDefense: 100, luck: 1 },
+        },
+      },
+    }, 'enemy.pebble', 'ポチ');
+    expect(named.accepted).toBe(true);
+    if (!named.accepted) return;
+    const battle = fight(named.state);
+    expect(battle.accepted).toBe(true);
+    if (!battle.accepted) return;
+    const logs = battle.state.gameData.lastBattle?.turns.flatMap((turn) => turn.logs) ?? [];
+    expect(logs.some((line) => line.includes('ポチの追撃'))).toBe(true);
+  });
+
 });

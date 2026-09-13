@@ -73,6 +73,7 @@ import {
   orbRerollCost,
   playerCombatStats,
   petCatalogEntry,
+  petDisplayName,
   petCaptureEquipmentMultiplier,
   petGachaSingleCost,
   dailyPetPickupId,
@@ -91,6 +92,7 @@ import {
   setActivePet,
   selectAchievementTitle,
   setMonsterLevel,
+  setPetNickname,
   skipBattleCooldown,
   soloAchievementProgress,
   toggleOrbFavorite,
@@ -307,6 +309,10 @@ export function MinuteVanguardApp() {
           const result = trainPet(state, enemyId);
           if (!result.accepted) setNotice(result.reason === 'no-snacks' ? 'おやつがありません' : result.reason === 'max-training' ? 'このペットは訓練上限です' : 'ペットを育成できません');
           else commit(result.state, 'ペットにおやつを与えました');
+        }} onPetRename={(enemyId, nickname) => {
+          const result = setPetNickname(state, enemyId, nickname);
+          if (!result.accepted) setNotice(result.reason === 'nickname-too-long' ? 'ペット名は12文字までです' : 'このペットの名前は変更できません');
+          else commit(result.state, nickname.trim().length === 0 ? 'ペット名を元に戻しました' : 'ペット名を変更しました');
         }} onPetBuySnacks={() => {
           const result = buyPetSnacks(state);
           if (!result.accepted) setNotice('おやつ購入に必要な100ジェムが足りません');
@@ -546,7 +552,7 @@ function BattleHistory({ state }: Readonly<{ state: MinuteVanguardState }>) {
   </section>;
 }
 
-function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onBuySpecial: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onPetGacha: (count: 1 | 10) => void; onPetTrain: (enemyId: string) => void; onPetBuySnacks: () => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
+function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onBuySpecial: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onPetGacha: (count: 1 | 10) => void; onPetTrain: (enemyId: string) => void; onPetRename: (enemyId: string, nickname: string) => void; onPetBuySnacks: () => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
   const { state } = props;
   const inventory = props.active === 'weapon' || props.active === 'armor' || props.active === 'orb'
     ? Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active)
@@ -586,7 +592,7 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
           <em>💎 {offer.price.toLocaleString()}</em>
         </button>)}
       </div>
-    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} onGacha={props.onPetGacha} onTrain={props.onPetTrain} onBuySnacks={props.onPetBuySnacks} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
+    </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} onGacha={props.onPetGacha} onTrain={props.onPetTrain} onRename={props.onPetRename} onBuySnacks={props.onPetBuySnacks} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
   </section>;
 }
 
@@ -880,7 +886,9 @@ function OrbView(props: Readonly<{ state: MinuteVanguardState; inventory: readon
   </div>;
 }
 
-function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId: string, active: boolean) => void; onGacha: (count: 1 | 10) => void; onTrain: (petId: string) => void; onBuySnacks: () => void }>) {
+function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId: string, active: boolean) => void; onGacha: (count: 1 | 10) => void; onTrain: (petId: string) => void; onRename: (petId: string, nickname: string) => void; onBuySnacks: () => void }>) {
+  const [renamingPetId, setRenamingPetId] = useState<string | null>(null);
+  const [nicknameDraft, setNicknameDraft] = useState('');
   const owned = ownedPetIds(props.state).map((id) => petCatalogEntry(id)).filter((pet): pet is NonNullable<ReturnType<typeof petCatalogEntry>> => pet !== null);
   const activeLimit = currentJob(props.state).id === 'job.tamer' ? 2 : 1;
   const totalTraining = totalPetTrainingLevels(props.state);
@@ -912,9 +920,13 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId:
       const mutatedCaptured = pet.source === 'capture' && props.state.gameData.mutatedPetEnemyIds.includes(pet.id);
       const level = petTrainingLevel(props.state, pet.id);
       const cap = petTrainingCap(pet.id) ?? level;
-      return <article key={pet.id} className={`pet-row ${active ? 'active' : ''}`}>
+      const nickname = props.state.gameData.petTraining[pet.id]?.nickname ?? null;
+      const displayName = petDisplayName(props.state, pet.id);
+      const renaming = renamingPetId === pet.id;
+      const draftLength = Array.from(nicknameDraft.trim()).length;
+      return <article key={pet.id} className={`pet-row ${active ? 'active' : ''} ${renaming ? 'renaming' : ''}`}>
         <span className="pet-glyph">{pet.glyph}</span>
-        <div className="pet-row-main"><strong>{pet.displayName}</strong><small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}${mutatedCaptured ? ' · ★変異捕獲' : ''}`}{pet.specialEffect ? ` · ${petSpecialEffectLabel(pet.specialEffect)}` : ''}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div></div>
+        <div className="pet-row-main"><div className="pet-name-line"><strong>{displayName}</strong><button aria-label={`${displayName}の名前を変更`} onClick={() => { setRenamingPetId(pet.id); setNicknameDraft(nickname ?? ''); }}>✎</button></div>{nickname && <small className="pet-original-name">元の名前：{pet.displayName}</small>}<small>{pet.rarity.toUpperCase()} · {pet.source === 'gacha' ? 'ガチャ限定' : `討伐 ${kills}${mutatedCaptured ? ' · ★変異捕獲' : ''}`}{pet.specialEffect ? ` · ${petSpecialEffectLabel(pet.specialEffect)}` : ''}</small><div className="pet-training-meter"><span style={{ width: `${cap <= 0 ? 0 : Math.min(100, level / cap * 100)}%` }} /><em>訓練 Lv.{level} / {cap}</em></div>{renaming && <div className="pet-rename-editor"><input autoFocus value={nicknameDraft} onChange={(event) => setNicknameDraft(event.target.value)} placeholder={pet.displayName} aria-label="ペットの新しい名前" /><span className={draftLength > 12 ? 'over' : ''}>{draftLength}/12</span><button disabled={draftLength > 12} onClick={() => { props.onRename(pet.id, nicknameDraft); setRenamingPetId(null); }}>保存</button><button onClick={() => setRenamingPetId(null)}>取消</button></div>}</div>
         <div className="pet-row-actions"><button className={active ? 'active' : ''} onClick={() => props.onToggle(pet.id, !active)}>{active ? '参戦中' : '編成'}</button><button disabled={props.state.gameData.petSnacks <= 0 || level >= cap} onClick={() => props.onTrain(pet.id)}>{level >= cap ? 'MAX' : '🍖 育成'}</button></div>
       </article>;
     })}</div>}

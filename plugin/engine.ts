@@ -645,6 +645,35 @@ export function petSnackDropChance(mutated: boolean): number {
   return mutated ? 0.15 : 0.05;
 }
 
+export function petDisplayName(state: MinuteVanguardState, petId: string): string {
+  const pet = petCatalogEntry(petId);
+  if (pet === null) return petId;
+  const nickname = state.gameData.petTraining[petId]?.nickname?.trim();
+  return nickname && nickname.length > 0 ? nickname : pet.displayName;
+}
+
+export function setPetNickname(
+  state: MinuteVanguardState,
+  petId: string,
+  nickname: string,
+): CommandResult<MinuteVanguardState, 'pet-not-owned' | 'nickname-too-long'> {
+  if (!ownedPetIds(state).includes(petId)) return reject(state, 'pet-not-owned');
+  const normalized = nickname.trim();
+  if (Array.from(normalized).length > 12) return reject(state, 'nickname-too-long');
+  const current = state.gameData.petTraining[petId] ?? { trainingLevel: 0, nickname: null };
+  const nextState: MinuteVanguardState = {
+    ...state,
+    gameData: {
+      ...state.gameData,
+      petTraining: {
+        ...state.gameData.petTraining,
+        [petId]: { ...current, nickname: normalized.length === 0 ? null : normalized },
+      },
+    },
+  };
+  return accept(nextState, [event(nextState, 'petNicknameChanged', petId, { petId, nickname: normalized })]);
+}
+
 export function activePetGuardRate(state: MinuteVanguardState): number {
   const guards = state.gameData.activePetEnemyIds.filter((petId) => petCatalogEntry(petId)?.specialEffect === 'guard').length;
   return Math.min(0.16, guards * 0.08);
@@ -862,19 +891,19 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
           const tripleMultiplier = petTripleStrikeMultiplier(pet.specialEffect, petSkillRoll.value);
           if (tripleMultiplier > 1) {
             hit *= tripleMultiplier;
-            logs.push(`${pet.displayName}の会心本能！ 3倍の一撃！`);
+            logs.push(`${petDisplayName(nextState, petId)}の会心本能！ 3倍の一撃！`);
           }
         }
         petDamage += hit;
         enemyHp = Math.max(0, enemyHp - hit);
-        logs.push(`${pet.displayName}の追撃！ ${hit} ダメージ！`);
+        logs.push(`${petDisplayName(nextState, petId)}の追撃！ ${hit} ダメージ！`);
         if (enemyHp <= 0) break;
         const followupMultiplier = petFollowupDamageMultiplier(pet.specialEffect);
         if (followupMultiplier > 0) {
           const followup = Math.max(1, Math.round(hit * followupMultiplier));
           petDamage += followup;
           enemyHp = Math.max(0, enemyHp - followup);
-          logs.push(`${pet.displayName}がもう一度飛び込む！ ${followup} ダメージ！`);
+          logs.push(`${petDisplayName(nextState, petId)}がもう一度飛び込む！ ${followup} ダメージ！`);
           if (enemyHp <= 0) break;
         }
       }
