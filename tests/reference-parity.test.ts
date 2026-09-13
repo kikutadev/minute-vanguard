@@ -4,7 +4,7 @@ import { battleCooldownDefinition, enemies, ids, jobs, loadoutDefinition, orbRan
 import { hero60Reference } from '../reference/hero60-reference-contract';
 import {
   ARENA_COOLDOWN_MS, ARENA_DAILY_WIN_LIMIT, ARENA_DEFENSE_BARRIER_MS, ARENA_START_RATING, ARENA_TIERS,
-  arenaAttackSeasonScore, arenaDefenseSeasonScore, arenaRatingDeltas, arenaWeekendMultiplier,
+  arenaAttackSeasonScore, arenaDefenseSeasonScore, arenaRatingDeltas, arenaWeekendMultiplier, arenaPetAttackRate, arenaDodgeChance,
 } from '../application/arena-domain';
 import {
   activateRareGuarantee,
@@ -128,6 +128,9 @@ describe('public reference parity locks', () => {
     expect(arenaDefenseSeasonScore(1_500, weekday)).toBe(5);
     expect(arenaRatingDeltas(1_000, 1_700, 'win')).toEqual({ attacker: 0, defender: 0 });
     expect(hero60Reference.arena.exactRatingFormulaPublic).toBe(false);
+    expect(arenaPetAttackRate('job.tamer', 1)).toBeCloseTo((0.25 + hero60Reference.arena.pets.tamerBonusPoints / 100) * hero60Reference.arena.pets.tamerSecondMultiplier);
+    expect(arenaDodgeChance('job.ninja', 0)).toBeCloseTo(hero60Reference.arena.pets.ninjaDodge);
+    expect(arenaDodgeChance('job.wraith', 0)).toBeCloseTo(hero60Reference.arena.pets.wraithDodge);
   });
 });
 

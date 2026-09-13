@@ -3,7 +3,7 @@ import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit'
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
 import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
-import { arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout } from '../application/arena-domain';
+import { arenaGearBySlot, type ArenaGearDefinition, type ArenaGearSlot, type ArenaLoadout, type ArenaPetKind, type ArenaPetLoadout } from '../application/arena-domain';
 import {
   createMinuteVanguardPublicData,
   MINUTE_VANGUARD_GAME_ID,
@@ -625,6 +625,15 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     finally { setBusy(false); }
   };
 
+  const setArenaPet = async (slot: 'primary' | 'secondary', kind: ArenaPetKind) => {
+    if (arena === null) return;
+    const next: ArenaPetLoadout = slot === 'primary' ? { ...arena.pets, primary: kind } : { ...arena.pets, secondary: kind };
+    setBusy(true); setError(null);
+    try { setArena(await getMinuteVanguardOnlineClient().setArenaPets(next)); }
+    catch { setError('Arenaペットを変更できませんでした'); }
+    finally { setBusy(false); }
+  };
+
   const leave = async () => {
     if (!window.confirm('アリーナ戦績・レート・シーズンスコアを削除して退会しますか？')) return;
     setBusy(true); setError(null);
@@ -689,6 +698,16 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         const currentId = slot === 'weapon' ? arena.loadout.weaponId : slot === 'armor' ? arena.loadout.armorId : arena.loadout.orbId;
         return <section key={slot}><h4>{slot === 'weapon' ? '武器' : slot === 'armor' ? '防具' : 'オーブ'}</h4>{arenaGearBySlot(slot).map((gearDef) => <button key={gearDef.id} className={gearDef.id === currentId ? 'active' : ''} disabled={busy || gearDef.id === currentId} onClick={() => void equipArenaGear(slot, gearDef.id)}><span>{gearDef.icon}</span><div><strong>{gearDef.displayName}</strong><small>{gearDef.description}</small></div><em>{gearDef.id === currentId ? '装備中' : '無料'}</em></button>)}</section>;
       })}<p>{arena.jobId === 'job.wraith' ? '幽鬼は職業特性によりArena装備のステータス補正を受けません。' : '通常装備・Gold・ローカルセーブ値はArena戦闘へ入りません。'}</p></div>}
+    </div>
+
+    <div className="arena-pet-card">
+      <div className="arena-pet-head"><span><strong>Arenaペット</strong><small>毎ターン追撃 · 攻撃/防衛共通 · サーバー保存</small></span><em>{arena.jobId === 'job.tamer' ? '2体' : '1体'}</em></div>
+      {(['primary', 'secondary'] as const).map((slot, index) => {
+        const enabled = index === 0 || arena.jobId === 'job.tamer';
+        const current = enabled ? arena.pets[slot] : 'none';
+        return <section key={slot} className={!enabled ? 'disabled' : ''}><h4>{index === 0 ? '1体目' : '2体目'}{index === 1 && <small>テイマー専用 · 火力60%</small>}</h4><div>{(['none', 'physical', 'magic'] as const).map((kind) => <button key={kind} disabled={busy || !enabled || current === kind} className={current === kind ? 'active' : ''} onClick={() => void setArenaPet(slot, kind)}><span>{kind === 'physical' ? '🐾' : kind === 'magic' ? '✨' : '—'}</span><strong>{kind === 'physical' ? '物理型' : kind === 'magic' ? '魔法型' : 'なし'}</strong>{kind !== 'none' && <small>{kind === 'physical' ? 'ATK基準' : 'MAT基準'}</small>}</button>)}</div></section>;
+      })}
+      <p>通常ペットの所持数・訓練Lvは競技値へ直接持ち込まず、Arena用に正規化します。テイマーは追撃率+40pt。</p>
     </div>
 
     <div className="arena-defense-card">

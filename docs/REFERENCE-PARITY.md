@@ -76,9 +76,10 @@
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
 - Gold bags: 30/100/300 Gem, based only on rolling last-ten monster-victory levels, unavailable before two wins, unaffected by current Gold multipliers. Exact payout equation remains product-owned because the public guide does not expose it.
 - Arena dedicated loadout: public reference locks free Weapon / Armor / Orb selection and the same loadout on attack + defense. Minute Vanguard uses three original options per slot; exact stat values are product-owned because the public table is not exposed.
+- Arena pets: pets follow up every turn in Arena, Tamer can field two, second pet is 60%, Tamer adds 40 percentage points to pet attack rate, and pet attacks use the same published Ninja 30% / Wraith 70% dodge. Minute Vanguard keeps normal pet ownership/training out of competitive authority and stores normalized physical/magic Arena pet types in D1; the unpublished base Arena pet rate is product-owned.
 - Public profile / reference ranking boundary: recent profiles plus Lv / victories / codex sorts are backed by Minute Vanguard Cloudflare Worker + D1 and are explicit opt-in. These client-submitted values are discovery/reference only and are never treated as PvP or reward authority.
 - Arena / Champion: weekly Monday 0:00 JST season, Season Score rank #1 crown, Rating start 1,000, nearby-Rating random matching, fixed separate 60-second cooldown, 3 wins/day per opponent, two-hour optional defense barrier, attacker win score Rating÷100 clamped 2–40, loss/draw 1pt, defense win 1/3, 200-point defense allowance, Fri/Sat/Sun ×2 score, 700+ Rating-gap upset guard, ten public tier thresholds. Minute Vanguard resolves these on Worker/D1 authority rather than the public-profile table.
-- Arena combat authority: server seed + combatVersion + resolved turn log, server-owned Rating/score/cooldown/history, and conditional D1 cooldown reservation prevent client stat injection and concurrent double-submit. Until trusted Arena progression is added, local Lv/equipment/Gold/pets are not combat inputs; job id only selects a normalized Arena style.
+- Arena combat authority: server seed + combatVersion + resolved turn log, server-owned Rating/score/cooldown/history, and conditional D1 cooldown reservation prevent client stat injection and concurrent double-submit. Local Lv/equipment/Gold/pet training are not combat inputs; job id, server-owned Arena loadout, and normalized Arena pet types select the competitive style.
 
 ### Public behavior known, exact table not yet public-locked
 
@@ -93,8 +94,7 @@
 
 ### Next implementation gaps
 
-1. Server-owned Arena pet participation (reference update 2026-08-10 / 2026-09-07)
-2. Arena random-match Gold transfer, named challenges, season rewards and hall-of-fame persistence
+1. Arena random-match Gold transfer, named challenges, season rewards and hall-of-fame persistence
 3. Server-authoritative shared Raid / wanted-event boundary
 
 ### Additional solo parity locked in current implementation

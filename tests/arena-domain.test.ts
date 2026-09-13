@@ -6,7 +6,11 @@ import {
   ARENA_DAILY_WIN_LIMIT,
   ARENA_DEFENSE_BARRIER_MS,
   ARENA_MAX_TURNS,
+  ARENA_COMBAT_VERSION,
+  ARENA_DEFAULT_PETS,
   arenaAttackSeasonScore,
+  arenaDodgeChance,
+  arenaPetAttackRate,
   arenaCombatStats,
   arenaGearBySlot,
   arenaDefenseSeasonScore,
@@ -17,6 +21,7 @@ import {
   arenaSeasonResetRating,
   arenaTierForScore,
   arenaWeekendMultiplier,
+  arenaWraithAfterHits,
   arenaUsesMagic,
   simulateArenaBattle,
 } from '../application/arena-domain';
@@ -97,6 +102,39 @@ describe('arena domain', () => {
     const physical = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.warrior', attackerLoadout: ARENA_DEFAULT_LOADOUT, seed: 81 });
     const magical = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.warrior', attackerLoadout: staff, seed: 81 });
     expect(magical).not.toEqual(physical);
+  });
+
+
+  it('uses server-owned Arena pets with +40 points for Tamer and 60% on the second pet', () => {
+    expect(arenaPetAttackRate('job.adventurer', 0)).toBeCloseTo(0.25);
+    expect(arenaPetAttackRate('job.tamer', 0)).toBeCloseTo(0.65);
+    expect(arenaPetAttackRate('job.tamer', 1)).toBeCloseTo(0.39);
+    expect(ARENA_DEFAULT_PETS).toEqual({ primary: 'none', secondary: 'none' });
+  });
+
+  it('uses the published Ninja and Wraith dodge rates for player and pet attacks', () => {
+    expect(arenaDodgeChance('job.ninja', 0)).toBeCloseTo(0.30);
+    expect(arenaDodgeChance('job.wraith', 999)).toBeCloseTo(0.70);
+    expect(arenaDodgeChance('job.warrior', 10)).toBeGreaterThanOrEqual(0.03);
+  });
+
+  it('ignores a second Arena pet outside Tamer and enables it for Tamer', () => {
+    const secondaryOnly = { primary: 'none', secondary: 'physical' } as const;
+    const noPets = simulateArenaBattle({ attackerJobId: 'job.warrior', defenderJobId: 'job.adventurer', seed: 404 });
+    const nonTamer = simulateArenaBattle({ attackerJobId: 'job.warrior', defenderJobId: 'job.adventurer', attackerPets: secondaryOnly, seed: 404 });
+    expect(nonTamer).toEqual(noPets);
+
+    const tamerNoPets = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.adventurer', seed: 404 });
+    const tamerSecondary = simulateArenaBattle({ attackerJobId: 'job.tamer', defenderJobId: 'job.adventurer', attackerPets: secondaryOnly, seed: 404 });
+    expect(tamerSecondary).not.toEqual(tamerNoPets);
+    expect(tamerSecondary.turns.flatMap((turn) => turn.logs).some((line) => line.includes('2体目'))).toBe(true);
+  });
+
+  it('uses current Wraith accumulation and one-third hit decay in Arena combat v3', () => {
+    expect(ARENA_COMBAT_VERSION).toBe(3);
+    expect(arenaWraithAfterHits(9, 1)).toBeCloseTo(3);
+    expect(arenaWraithAfterHits(9, 2)).toBeCloseTo(1);
+    expect(arenaWraithAfterHits(1, 1)).toBeCloseTo(0.5);
   });
 
   it('uses the published tier thresholds', () => {

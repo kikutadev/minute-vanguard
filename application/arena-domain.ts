@@ -1,4 +1,4 @@
-export const ARENA_COMBAT_VERSION = 2;
+export const ARENA_COMBAT_VERSION = 3;
 export const ARENA_COOLDOWN_MS = 60_000;
 export const ARENA_DEFENSE_BARRIER_MS = 2 * 60 * 60 * 1_000;
 export const ARENA_MAX_TURNS = 20;
@@ -22,6 +22,8 @@ export type ArenaArmorId = 'arena.armor.guard-plate' | 'arena.armor.ward-robe' |
 export type ArenaOrbId = 'arena.orb.balance' | 'arena.orb.edge' | 'arena.orb.shelter';
 export type ArenaLoadout = Readonly<{ weaponId: ArenaWeaponId; armorId: ArenaArmorId; orbId: ArenaOrbId }>;
 export type ArenaGearSlot = 'weapon' | 'armor' | 'orb';
+export type ArenaPetKind = 'none' | 'physical' | 'magic';
+export type ArenaPetLoadout = Readonly<{ primary: ArenaPetKind; secondary: ArenaPetKind }>;
 export type ArenaGearDefinition = Readonly<{
   id: ArenaWeaponId | ArenaArmorId | ArenaOrbId;
   slot: ArenaGearSlot;
@@ -35,6 +37,11 @@ export const ARENA_DEFAULT_LOADOUT: ArenaLoadout = Object.freeze({
   armorId: 'arena.armor.guard-plate',
   orbId: 'arena.orb.balance',
 });
+
+export const ARENA_DEFAULT_PETS: ArenaPetLoadout = Object.freeze({ primary: 'none', secondary: 'none' });
+export const ARENA_PET_BASE_ATTACK_RATE = 0.25;
+export const ARENA_TAMER_PET_BONUS_RATE = 0.40;
+export const ARENA_SECOND_PET_MULTIPLIER = 0.60;
 
 export const ARENA_GEAR: readonly ArenaGearDefinition[] = Object.freeze([
   { id: 'arena.weapon.vanguard-blade', slot: 'weapon', displayName: '先陣の剣', description: 'ATK重視。物理職の正面火力を伸ばす。', icon: '⚔️' },
@@ -52,6 +59,23 @@ export function isArenaLoadout(value: unknown): value is ArenaLoadout {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return isArenaGearId(record.weaponId, 'weapon') && isArenaGearId(record.armorId, 'armor') && isArenaGearId(record.orbId, 'orb');
+}
+
+export function isArenaPetLoadout(value: unknown): value is ArenaPetLoadout {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return isArenaPetKind(record.primary) && isArenaPetKind(record.secondary);
+}
+
+export function arenaPetAttackRate(jobId: ArenaJobId, slotIndex: 0 | 1): number {
+  const base = ARENA_PET_BASE_ATTACK_RATE + (jobId === 'job.tamer' ? ARENA_TAMER_PET_BONUS_RATE : 0);
+  return base * (slotIndex === 1 ? ARENA_SECOND_PET_MULTIPLIER : 1);
+}
+
+export function arenaDodgeChance(jobId: ArenaJobId, luck: number): number {
+  if (jobId === 'job.ninja') return 0.30;
+  if (jobId === 'job.wraith') return 0.70;
+  return clamp(0.025 + Math.max(0, luck) * 0.002, 0.03, 0.22);
 }
 
 export function arenaGearBySlot(slot: ArenaGearSlot): readonly ArenaGearDefinition[] {
@@ -153,6 +177,10 @@ export function arenaUsesMagic(jobId: ArenaJobId, loadout: ArenaLoadout = ARENA_
   return jobId === 'job.tamer' && loadout.weaponId === 'arena.weapon.arc-focus';
 }
 
+function isArenaPetKind(value: unknown): value is ArenaPetKind {
+  return value === 'none' || value === 'physical' || value === 'magic';
+}
+
 function isArenaGearId(value: unknown, slot: ArenaGearSlot): boolean {
   return typeof value === 'string' && ARENA_GEAR.some((gear) => gear.slot === slot && gear.id === value);
 }
@@ -246,18 +274,22 @@ export function simulateArenaBattle(args: Readonly<{
   defenderJobId: ArenaJobId;
   attackerLoadout?: ArenaLoadout;
   defenderLoadout?: ArenaLoadout;
+  attackerPets?: ArenaPetLoadout;
+  defenderPets?: ArenaPetLoadout;
   seed: number;
 }>): ArenaBattleSimulation {
   const attackerLoadout = args.attackerLoadout ?? ARENA_DEFAULT_LOADOUT;
   const defenderLoadout = args.defenderLoadout ?? ARENA_DEFAULT_LOADOUT;
   const attackerStats = arenaCombatStats(args.attackerJobId, attackerLoadout);
   const defenderStats = arenaCombatStats(args.defenderJobId, defenderLoadout);
+  const attackerPets = args.attackerPets ?? ARENA_DEFAULT_PETS;
+  const defenderPets = args.defenderPets ?? ARENA_DEFAULT_PETS;
   const rng = mulberry32(args.seed >>> 0);
   const firstSide: ArenaBattleSide = rng() < 0.5 ? 'attacker' : 'defender';
   let attackerHp = attackerStats.hp;
   let defenderHp = defenderStats.hp;
-  let attackerWraithPower = 0.5;
-  let defenderWraithPower = 0.5;
+  let attackerWraithPower = 1;
+  let defenderWraithPower = 1;
   let attackerHex = 0;
   let defenderHex = 0;
   const turns: ArenaBattleTurn[] = [];
@@ -284,8 +316,14 @@ export function simulateArenaBattle(args: Readonly<{
         defenderHp = result.targetHpAfter;
         attackerWraithPower = result.wraithPowerAfter;
         attackerHex = result.hexStacksAfter;
-        if (result.hitTarget && args.defenderJobId === 'job.wraith') defenderWraithPower = 0.5;
+        if (result.hitTarget && args.defenderJobId === 'job.wraith') defenderWraithPower = arenaWraithAfterHits(defenderWraithPower, 1);
         logs.push(...result.logs.map((line) => `攻 ${line}`));
+        if (defenderHp > 0) {
+          const pets = resolveArenaPetAttacks({ jobId: args.attackerJobId, petLoadout: attackerPets, stats: attackerStats, targetJobId: args.defenderJobId, targetStats: defenderStats, targetHp: defenderHp, rng });
+          defenderHp = pets.targetHpAfter;
+          if (args.defenderJobId === 'job.wraith' && pets.hitCount > 0) defenderWraithPower = arenaWraithAfterHits(defenderWraithPower, pets.hitCount);
+          logs.push(...pets.logs.map((line) => `攻 ${line}`));
+        }
       } else {
         const result = resolveAction({
           jobId: args.defenderJobId,
@@ -303,8 +341,14 @@ export function simulateArenaBattle(args: Readonly<{
         attackerHp = result.targetHpAfter;
         defenderWraithPower = result.wraithPowerAfter;
         defenderHex = result.hexStacksAfter;
-        if (result.hitTarget && args.attackerJobId === 'job.wraith') attackerWraithPower = 0.5;
+        if (result.hitTarget && args.attackerJobId === 'job.wraith') attackerWraithPower = arenaWraithAfterHits(attackerWraithPower, 1);
         logs.push(...result.logs.map((line) => `守 ${line}`));
+        if (attackerHp > 0) {
+          const pets = resolveArenaPetAttacks({ jobId: args.defenderJobId, petLoadout: defenderPets, stats: defenderStats, targetJobId: args.attackerJobId, targetStats: attackerStats, targetHp: attackerHp, rng });
+          attackerHp = pets.targetHpAfter;
+          if (args.attackerJobId === 'job.wraith' && pets.hitCount > 0) attackerWraithPower = arenaWraithAfterHits(attackerWraithPower, pets.hitCount);
+          logs.push(...pets.logs.map((line) => `守 ${line}`));
+        }
       }
     }
     turns.push({
@@ -335,6 +379,42 @@ export function simulateArenaBattle(args: Readonly<{
   };
 }
 
+function resolveArenaPetAttacks(args: Readonly<{
+  jobId: ArenaJobId;
+  petLoadout: ArenaPetLoadout;
+  stats: ArenaCombatStats;
+  targetJobId: ArenaJobId;
+  targetStats: ArenaCombatStats;
+  targetHp: number;
+  rng: () => number;
+}>): Readonly<{ targetHpAfter: number; hitCount: number; logs: readonly string[] }> {
+  let targetHp = args.targetHp;
+  let hitCount = 0;
+  const logs: string[] = [];
+  const pets: readonly ArenaPetKind[] = [args.petLoadout.primary, args.jobId === 'job.tamer' ? args.petLoadout.secondary : 'none'];
+  for (const [index, kind] of pets.entries()) {
+    if (kind === 'none' || targetHp <= 0) continue;
+    if (args.rng() < arenaDodgeChance(args.targetJobId, args.targetStats.luck)) {
+      logs.push(`${index === 0 ? '相棒' : '2体目'}の追撃をかわされた`);
+      continue;
+    }
+    const rate = arenaPetAttackRate(args.jobId, index === 0 ? 0 : 1);
+    const offense = kind === 'magic' ? args.stats.magicAttack : args.stats.attack;
+    const defense = kind === 'magic' ? args.targetStats.magicDefense : args.targetStats.defense;
+    const damage = Math.max(1, Math.round(offense * rate - defense * 0.20));
+    targetHp = Math.max(0, targetHp - damage);
+    hitCount += 1;
+    logs.push(`${index === 0 ? '相棒' : '2体目'}(${kind === 'magic' ? '魔' : '物'}) ${damage}ダメージ`);
+  }
+  return { targetHpAfter: targetHp, hitCount, logs };
+}
+
+export function arenaWraithAfterHits(multiplier: number, hits: number): number {
+  let next = Math.max(0.5, multiplier);
+  for (let index = 0; index < Math.max(0, Math.floor(hits)); index += 1) next = Math.max(0.5, next / 3);
+  return next;
+}
+
 function resolveAction(args: Readonly<{
   jobId: ArenaJobId;
   targetJobId: ArenaJobId;
@@ -360,8 +440,7 @@ function resolveAction(args: Readonly<{
   let hexStacks = args.hexStacks;
   const logs: string[] = [];
 
-  const dodgeBonus = args.targetJobId === 'job.ninja' ? 0.10 : args.targetJobId === 'job.wraith' ? 0.06 : 0;
-  const dodgeChance = clamp(0.025 + args.targetStats.luck * 0.002 + dodgeBonus, 0.03, 0.22);
+  const dodgeChance = arenaDodgeChance(args.targetJobId, args.targetStats.luck);
   if (args.rng() < dodgeChance) {
     logs.push('攻撃をかわされた');
     return { ownHpAfter: ownHp, targetHpAfter: targetHp, wraithPowerAfter: wraithPower, hexStacksAfter: hexStacks, hitTarget: false, logs };
@@ -376,8 +455,8 @@ function resolveAction(args: Readonly<{
     multiplier *= roll < 0.08 ? 2.4 : roll < 0.25 ? 1.6 : roll < 0.65 ? 1 : 0.55;
   }
   if (args.jobId === 'job.wraith') {
-    multiplier *= Math.max(0.5, wraithPower);
-    wraithPower = Math.min(3, wraithPower + 0.35);
+    wraithPower = Math.min(10, Math.max(0.5, wraithPower) * 1.5);
+    multiplier *= wraithPower;
   }
 
   const variance = 0.88 + args.rng() * 0.24;
@@ -397,11 +476,6 @@ function resolveAction(args: Readonly<{
     const chain = Math.max(1, Math.round(damage * 0.45));
     targetHp = Math.max(0, targetHp - chain);
     logs.push(`魔法連鎖 +${chain}`);
-  }
-  if (args.jobId === 'job.tamer' && targetHp > 0) {
-    const follow = 5 + Math.floor(args.rng() * 5);
-    targetHp = Math.max(0, targetHp - follow);
-    logs.push(`相棒の追撃 +${follow}`);
   }
   if (args.jobId === 'job.priest' && ownHp > 0 && ownHp < args.stats.hp) {
     const heal = Math.max(1, Math.round(args.stats.hp * 0.05));

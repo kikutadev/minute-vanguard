@@ -1,6 +1,6 @@
 import type { PublicPlayerSnapshot } from 'idle-game-kit';
 import type { ArenaBattleResult, ArenaHistoryEntry, ArenaLeaderboardEntry, ArenaPlayerView } from '../application/arena-contract';
-import { isArenaLoadout, type ArenaLoadout } from '../application/arena-domain';
+import { isArenaLoadout, isArenaPetLoadout, type ArenaLoadout, type ArenaPetLoadout } from '../application/arena-domain';
 import type { MinuteVanguardState } from '../definitions/types';
 import {
   createMinuteVanguardPublicSnapshot,
@@ -180,6 +180,19 @@ export class MinuteVanguardOnlineClient {
     return parseArenaEnvelope(payload);
   }
 
+  async setArenaPets(pets: ArenaPetLoadout): Promise<ArenaPlayerView> {
+    const identity = this.#readIdentity();
+    if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/pets`), {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${identity.writeToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify(pets),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    return parseArenaEnvelope(payload);
+  }
+
   async setArenaBarrier(enabled: boolean): Promise<ArenaPlayerView> {
     const identity = this.#readIdentity();
     if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
@@ -316,7 +329,7 @@ function parseArenaEnvelope(payload: unknown): ArenaPlayerView {
 function parseArenaPlayer(value: unknown): ArenaPlayerView {
   if (!isRecord(value) || typeof value.playerId !== 'string' || typeof value.displayName !== 'string' || typeof value.jobId !== 'string'
     || !Number.isFinite(value.rating) || !Number.isFinite(value.bestRating) || typeof value.seasonKey !== 'string'
-    || !Number.isFinite(value.seasonScore) || !Number.isFinite(value.nextAttackAtMs) || typeof value.barrierEnabled !== 'boolean' || !isArenaLoadout(value.loadout)) {
+    || !Number.isFinite(value.seasonScore) || !Number.isFinite(value.nextAttackAtMs) || typeof value.barrierEnabled !== 'boolean' || !isArenaLoadout(value.loadout) || !isArenaPetLoadout(value.pets)) {
     throw new PublicProfileOnlineError(502, 'invalid-arena-player', value);
   }
   return value as unknown as ArenaPlayerView;
@@ -324,7 +337,7 @@ function parseArenaPlayer(value: unknown): ArenaPlayerView {
 
 function parseArenaBattle(value: unknown): ArenaBattleResult {
   if (!isRecord(value) || typeof value.battleId !== 'string' || !Number.isFinite(value.resolvedAtMs) || typeof value.outcome !== 'string'
-    || !Array.isArray(value.turns) || !isRecord(value.opponent) || !isArenaLoadout(value.opponent.loadout) || !Number.isFinite(value.ratingAfter) || !Number.isFinite(value.seasonScoreAfter)) {
+    || !Array.isArray(value.turns) || !isRecord(value.opponent) || !isArenaLoadout(value.opponent.loadout) || !isArenaPetLoadout(value.opponent.pets) || !Number.isFinite(value.ratingAfter) || !Number.isFinite(value.seasonScoreAfter)) {
     throw new PublicProfileOnlineError(502, 'invalid-arena-battle', value);
   }
   return value as unknown as ArenaBattleResult;

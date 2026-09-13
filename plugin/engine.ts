@@ -631,6 +631,11 @@ export function petTrainingLevel(state: MinuteVanguardState, enemyId: string): n
   return state.gameData.petTraining[enemyId]?.trainingLevel ?? 0;
 }
 
+export function petAttackRate(trainingLevel: number, tamer: boolean): number {
+  const baseRate = 0.25 * (1 + Math.max(0, trainingLevel) * 0.02);
+  return baseRate + (tamer ? 0.40 : 0);
+}
+
 export function petCaptureEquipmentMultiplier(state: MinuteVanguardState): number {
   let multiplier = 1;
   for (const slot of ['weapon', 'armor'] as const) {
@@ -882,10 +887,9 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
         if (pet === null) continue;
         const sourcePower = pet.attackType === 'magic' ? stats.magicAttack : stats.attack;
         const trainingLevel = petTrainingLevel(nextState, petId);
-        const trainingMultiplier = 1 + trainingLevel * 0.02;
-        const tamerMultiplier = job.id === 'job.tamer' ? 1.4 : 1;
+        const attackRate = petAttackRate(trainingLevel, job.id === 'job.tamer');
         const secondPetMultiplier = petIndex === 0 ? 1 : 0.6;
-        let hit = Math.max(1, Math.round(sourcePower * 0.25 * trainingMultiplier * tamerMultiplier * petTitleMultiplier * secondPetMultiplier));
+        let hit = Math.max(1, Math.round(sourcePower * attackRate * petTitleMultiplier * secondPetMultiplier));
         if (pet.specialEffect === 'tripleStrike') {
           const petSkillRoll = draw(nextState, ids.rng.combat); nextState = petSkillRoll.state;
           const tripleMultiplier = petTripleStrikeMultiplier(pet.specialEffect, petSkillRoll.value);

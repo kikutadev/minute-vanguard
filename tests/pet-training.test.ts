@@ -10,6 +10,7 @@ import {
   levelGrowthMultiplier,
   petSnackAutoRemainingSec,
   petDisplayName,
+  petAttackRate,
   petTrainingCap,
   petTrainingGrowthBonusPct,
   setPetNickname,
@@ -116,6 +117,14 @@ describe('pet training', () => {
     expect(petTrainingGrowthBonusPct(trained)).toBe(2);
     // 1 owned pet + 2% from training, with no job-change bonus yet.
     expect(levelGrowthMultiplier(trained)).toBeCloseTo(1.03);
+  });
+
+
+  it('adds Tamer pet power as +40 percentage points instead of multiplying the base rate', () => {
+    expect(petAttackRate(0, false)).toBeCloseTo(0.25);
+    expect(petAttackRate(0, true)).toBeCloseTo(0.65);
+    expect(petAttackRate(20, false)).toBeCloseTo(0.35);
+    expect(petAttackRate(20, true)).toBeCloseTo(0.75);
   });
 
   it('supports a twelve-character nickname and empty reset without changing training', () => {
