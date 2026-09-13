@@ -154,6 +154,27 @@ export type BattleResult = Readonly<{
   titleCopyAdded: boolean;
 }>;
 
+export type BattleLogEntry = Readonly<{
+  battleIndex: number;
+  resolvedAtMs: number;
+  monsterLevel: number;
+  enemyId: string;
+  enemyName: string;
+  enemyGlyph: string;
+  enemyRarity: MonsterRarity;
+  mutated: boolean;
+  outcome: 'victory' | 'draw' | 'defeat';
+  goldDelta: number;
+  expGained: number;
+  gemGained: number;
+  petSnacksGained: number;
+  capturedPetEnemyId: string | null;
+  capturedPetMutated: boolean;
+  droppedItem: boolean;
+  droppedOrb: boolean;
+  droppedTitle: boolean;
+}>;
+
 export type PlayerProgress = Readonly<{
   name: string;
   level: number;
@@ -196,6 +217,7 @@ export type MinuteVanguardGameData = Readonly<{
   selectedMonsterLevel: number;
   nextItemSequence: number;
   lastBattle: BattleResult | null;
+  battleHistory: readonly BattleLogEntry[];
   rareGuaranteeActive: boolean;
   battleBoostActive: boolean;
   recoverableDefeatGold: number;

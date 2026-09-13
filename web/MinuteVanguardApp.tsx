@@ -431,6 +431,27 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
       <button onClick={props.onJob}><span>♻</span><small>転職</small>{state.gameData.player.level >= 30 && <em>!</em>}</button>
       <button disabled title="ミミック銀行は確率仕様を確認してから接続します"><span>🎭</span><small>ミミック銀行</small></button>
     </div>
+    <BattleHistory state={state} />
+  </section>;
+}
+
+function BattleHistory({ state }: Readonly<{ state: MinuteVanguardState }>) {
+  const [limit, setLimit] = useState<10 | 30 | 50>(() => {
+    const stored = Number(window.localStorage.getItem('minute-vanguard.battle-log-limit'));
+    return stored === 30 || stored === 50 ? stored : 10;
+  });
+  const selectLimit = (next: 10 | 30 | 50) => {
+    setLimit(next);
+    window.localStorage.setItem('minute-vanguard.battle-log-limit', String(next));
+  };
+  const entries = state.gameData.battleHistory.slice(0, limit);
+  return <section className="battle-history-card">
+    <header><div><strong>自分のログ</strong><small>この端末の直近戦闘</small></div><div className="battle-log-limit">{([10, 30, 50] as const).map((count) => <button className={limit === count ? 'active' : ''} key={count} onClick={() => selectLimit(count)}>{count}</button>)}</div></header>
+    {entries.length === 0 ? <p className="battle-log-empty">戦うとここに履歴が残ります。</p> : <div className="battle-log-list">{entries.map((entry) => <article className={`battle-log-row ${entry.outcome}`} key={entry.battleIndex}>
+      <span className="battle-log-glyph">{entry.enemyGlyph}</span>
+      <div className="battle-log-main"><div><small>#{entry.battleIndex} · Lv.{entry.monsterLevel}</small><strong>{entry.mutated ? '★ ' : ''}{entry.enemyName}</strong></div><p>{entry.outcome === 'victory' ? '勝利' : entry.outcome === 'draw' ? '引き分け' : '敗北'} · {entry.goldDelta >= 0 ? '+' : ''}{entry.goldDelta.toLocaleString()}G · +{entry.expGained.toLocaleString()}EXP</p></div>
+      <div className="battle-log-icons">{entry.gemGained > 0 && <span title="ジェム">💎{entry.gemGained}</span>}{entry.petSnacksGained > 0 && <span title="おやつ">🍖</span>}{entry.capturedPetEnemyId !== null && <span title={entry.capturedPetMutated ? '変異種を捕獲' : 'ペットを捕獲'}>{entry.capturedPetMutated ? '★🐾' : '🐾'}</span>}{entry.droppedOrb && <span title="オーブ">🔮</span>}{entry.droppedItem && <span title="装備">🎁</span>}{entry.droppedTitle && <span title="肩書き">◇</span>}</div>
+    </article>)}</div>}
   </section>;
 }
 

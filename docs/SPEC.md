@@ -141,6 +141,8 @@ The codex is split by monster level and records encounters, defeats, mutated enc
 
 During an active battle cooldown, the player can open a reward-free `Monster Tap` pastime. Six cells cycle through monsters from unlocked levels plus occasional hero decoys. Correct monster taps score +1; hero or empty-cell taps cost 3 points. The best score is local-device-only and opening/closing the pastime has no effect on progression or rewards.
 
+The battle screen also keeps a local battle history. Only lightweight summaries are stored (not 20-turn transcripts), newest-first with a 50-entry cap. The visible count is selectable between 10 / 30 / 50 and is stored per browser/device. Solo mode intentionally exposes only `自分のログ`; the public `みんな` feed remains an online feature.
+
 The solo collection also includes 104 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
 
 ## Pets

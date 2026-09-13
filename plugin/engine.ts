@@ -63,6 +63,7 @@ import {
 import { duplicateSnackRewardByRarity, gachaPetDefinitions, type GachaPetSpecialEffect } from '../definitions/gacha-pet-definitions';
 import { soloAchievementDefinitions, type SoloAchievementDefinition, type SoloAchievementMetric } from '../definitions/achievement-definitions';
 import type {
+  BattleLogEntry,
   BattleResult,
   BattleTurn,
   DailyMissionProgress,
@@ -231,6 +232,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       selectedMonsterLevel: 1,
       nextItemSequence: 1,
       lastBattle: null,
+      battleHistory: [],
       rareGuaranteeActive: false,
       battleBoostActive: false,
       recoverableDefeatGold: 0,
@@ -288,6 +290,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
         recentVictoryMonsterLevels: state.gameData.recentVictoryMonsterLevels ?? [],
         selectedMonsterLevel: Math.min(state.gameData.selectedMonsterLevel ?? 1, unlockedMonsterLevelFromKills(state.gameData.killCounts)),
+        battleHistory: state.gameData.battleHistory ?? (state.gameData.lastBattle === null ? [] : [battleResultToLogEntry(state.gameData.lastBattle, state.lastWallClockMs)]),
         mutatedPetEnemyIds: state.gameData.mutatedPetEnemyIds ?? [],
         ownedGachaPetIds: state.gameData.ownedGachaPetIds ?? [],
         player: { ...state.gameData.player, petCount: (state.gameData.ownedPetEnemyIds ?? []).length + (state.gameData.ownedGachaPetIds ?? []).length },
@@ -1209,13 +1212,37 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   };
   nextState = {
     ...nextState,
-    gameData: { ...nextState.gameData, battleCooldown: consumed.cooldown, lastBattle: result },
+    gameData: { ...nextState.gameData, battleCooldown: consumed.cooldown, lastBattle: result, battleHistory: [battleResultToLogEntry(result, nextState.lastWallClockMs), ...nextState.gameData.battleHistory].slice(0, 50) },
   };
 
   return accept(nextState, [event(nextState, 'battleResolved', `${battleIndex}`, {
     enemyId: enemy.id, outcome, mutated, goldDelta, expGained, gemGained, streak, jackpotMultiplier,
     droppedItemInstanceId, droppedOrbInstanceId, capturedPetEnemyId, capturedPetMutated, petSnacksGained,
   })]);
+}
+
+function battleResultToLogEntry(result: BattleResult, resolvedAtMs: number): BattleLogEntry {
+  const monsterLevel = enemies.find((enemy) => enemy.id === result.enemyId)?.monsterLevel ?? 1;
+  return {
+    battleIndex: result.battleIndex,
+    resolvedAtMs,
+    monsterLevel,
+    enemyId: result.enemyId,
+    enemyName: result.enemyName,
+    enemyGlyph: result.enemyGlyph,
+    enemyRarity: result.enemyRarity,
+    mutated: result.mutated,
+    outcome: result.outcome,
+    goldDelta: result.goldDelta,
+    expGained: result.expGained,
+    gemGained: result.gemGained,
+    petSnacksGained: result.petSnacksGained,
+    capturedPetEnemyId: result.capturedPetEnemyId,
+    capturedPetMutated: result.capturedPetMutated,
+    droppedItem: result.droppedItemInstanceId !== null,
+    droppedOrb: result.droppedOrbInstanceId !== null,
+    droppedTitle: result.droppedTitleId !== null,
+  };
 }
 
 export function buyEquipment(
