@@ -56,6 +56,7 @@
 - 戦闘勝利時のおやつ低確率ドロップ、変異種はドロップ重み×3（基礎確率は非公開のためMinute Vanguard独自）
 - 変異種は累計討伐20体までは出現しない
 - Daily 5個 / 5カテゴリ / 22候補 / JST 0時 / 達成順3・3・4・5・5Gem（合計20）
+- ログインボーナス: 7日周期、欠席で1日目へ、1日目2,000G、7日目20,000G+15Gem。2〜6日目は公開表なしのためMinute Vanguard独自漸増値
 - 下部5タブ、装備5タブ（武器 / 防具 / オーブ / ペット / 肩書き）
 - Time Boost: 3分/30Gem、10分/100Gem
 - Rush: CD10秒・効果中Gem skip不可 / EXP・Gold boost: ×2
@@ -82,8 +83,7 @@
 ### Next implementation gaps
 
 1. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
-2. Login bonus 7-day cycle
-3. Server boundary for real ranking / PvP / raid
+2. Server boundary for real ranking / PvP / raid
 
 ### Additional solo parity locked in current implementation
 

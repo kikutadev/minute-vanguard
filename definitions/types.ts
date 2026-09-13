@@ -21,6 +21,11 @@ export type PetTrainingState = Readonly<{
   nickname: string | null;
 }>;
 
+export type LoginBonusState = Readonly<{
+  lastClaimDayKey: string | null;
+  streakDay: number;
+}>;
+
 export type DailyMissionProgress = Readonly<{
   dayKey: string;
   battles: number;
@@ -210,6 +215,7 @@ export type MinuteVanguardGameData = Readonly<{
   favoriteTitleIds: readonly string[];
   titleShop: TitleShopState;
   missionProgress: DailyMissionProgress;
+  loginBonus: LoginBonusState;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;

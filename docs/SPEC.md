@@ -157,6 +157,10 @@ Five local daily missions are selected deterministically for each JST day. Every
 
 Rewards are based on number claimed that day: 3 / 3 / 4 / 5 / 5 Gem (20 total). All progress and claims reset at midnight JST. Battle-count targets are tuned around 20–50 fights so the full set is a meaningful session rather than a few-minute checklist.
 
+## Login bonus
+
+The local solo save tracks a seven-day JST login cycle. Day 1 grants 2,000 Gold; Day 7 grants 20,000 Gold + 15 Gem. Missing a calendar day resets the cycle to Day 1, and Day 7 cycles back to Day 1 on the next consecutive day. The public guide does not expose Days 2–6, so those intermediate Gold amounts are explicitly Minute Vanguard-owned balance rather than parity values.
+
 ## Time Boosts
 
 Three local-only timed boosts are implemented in Shop. They use simulation time and therefore expire correctly across background/offline wall-clock advancement.

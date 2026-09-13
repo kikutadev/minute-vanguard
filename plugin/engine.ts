@@ -116,6 +116,15 @@ const KNOWN_ORB_EFFECT_LADDERS: Readonly<Partial<Record<OrbEffectId, readonly nu
   cooldown: [1, 2, 3, 4, 5],
 };
 const DAILY_MISSION_REWARDS = [3, 3, 4, 5, 5] as const;
+export const LOGIN_BONUS_REWARDS = [
+  { day: 1, gold: 2_000, gems: 0 },
+  { day: 2, gold: 3_500, gems: 0 },
+  { day: 3, gold: 5_000, gems: 0 },
+  { day: 4, gold: 7_500, gems: 0 },
+  { day: 5, gold: 10_000, gems: 0 },
+  { day: 6, gold: 15_000, gems: 0 },
+  { day: 7, gold: 20_000, gems: 15 },
+] as const;
 export type DailyMissionDefinition = Readonly<{
   id: string;
   category: 'battle' | 'result' | 'rarity' | 'progression' | 'collection';
@@ -244,6 +253,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       favoriteTitleIds: [],
       titleShop: { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), createProgressiveTitleCollection()), purchasedTitleIds: [] },
       missionProgress: createDailyMissionProgress(jstDayKey(nowMs)),
+      loginBonus: { lastClaimDayKey: null, streakDay: 0 },
     },
   };
 }
@@ -262,6 +272,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         favoriteTitleIds: state.gameData.favoriteTitleIds ?? [],
         titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
         missionProgress: normalizeDailyMissionProgress(state.gameData.missionProgress, jstDayKey(nowMs)),
+        loginBonus: state.gameData.loginBonus ?? { lastClaimDayKey: null, streakDay: 0 },
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
@@ -1674,6 +1685,37 @@ export function toggleTitleFavorite(state: MinuteVanguardState, titleId: string)
   return { ...state, gameData: { ...state.gameData, favoriteTitleIds } };
 }
 
+export type LoginBonusPreview = Readonly<{ available: boolean; day: number; gold: number; gems: number; dayKey: string }>;
+
+export function loginBonusPreview(state: MinuteVanguardState): LoginBonusPreview {
+  const dayKey = jstDayKey(state.lastWallClockMs);
+  const previous = state.gameData.loginBonus.lastClaimDayKey;
+  if (previous === dayKey) {
+    const reward = LOGIN_BONUS_REWARDS[Math.max(0, Math.min(6, state.gameData.loginBonus.streakDay - 1))] ?? LOGIN_BONUS_REWARDS[0];
+    return { available: false, day: reward.day, gold: reward.gold, gems: reward.gems, dayKey };
+  }
+  let day = 1;
+  if (previous !== null && dayKeyDifference(previous, dayKey) === 1) {
+    day = state.gameData.loginBonus.streakDay >= 7 ? 1 : Math.max(1, state.gameData.loginBonus.streakDay + 1);
+  }
+  const reward = LOGIN_BONUS_REWARDS[day - 1] ?? LOGIN_BONUS_REWARDS[0];
+  return { available: true, day: reward.day, gold: reward.gold, gems: reward.gems, dayKey };
+}
+
+export function claimLoginBonus(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'already-claimed'> {
+  const preview = loginBonusPreview(state);
+  if (!preview.available) return reject(state, 'already-claimed');
+  let nextState = grantCurrency(state, ids.currency.gold, preview.gold, `login.${preview.dayKey}.${preview.day}.gold`);
+  if (preview.gems > 0) nextState = grantCurrency(nextState, ids.currency.gem, preview.gems, `login.${preview.dayKey}.${preview.day}.gem`);
+  nextState = {
+    ...nextState,
+    gameData: { ...nextState.gameData, loginBonus: { lastClaimDayKey: preview.dayKey, streakDay: preview.day } },
+  };
+  return accept(nextState, [event(nextState, 'loginBonusClaimed', `${preview.dayKey}:${preview.day}`, { day: preview.day, gold: preview.gold, gems: preview.gems })]);
+}
+
 export function dailyMissions(state: MinuteVanguardState): readonly DailyMissionDefinition[] {
   const dayKey = state.gameData.missionProgress.dayKey;
   return DAILY_MISSION_GROUPS.map((group, index) => {
@@ -2059,6 +2101,13 @@ function normalizeDailyMissionProgress(progress: DailyMissionProgress, dayKey: s
     rarityWins: progress.rarityWins ?? {},
     claimed: progress.claimed ?? [],
   };
+}
+
+function dayKeyDifference(fromDayKey: string, toDayKey: string): number {
+  const from = Date.parse(`${fromDayKey}T00:00:00Z`);
+  const to = Date.parse(`${toDayKey}T00:00:00Z`);
+  if (!Number.isFinite(from) || !Number.isFinite(to)) return Number.POSITIVE_INFINITY;
+  return Math.round((to - from) / 86_400_000);
 }
 
 function jstDayKey(wallClockMs: number): string {

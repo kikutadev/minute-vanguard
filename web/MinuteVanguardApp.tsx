@@ -19,6 +19,7 @@ import {
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
 import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
+  LOGIN_BONUS_REWARDS,
   activateRareGuarantee,
   activateBattleBoost,
   advanceFromWallClock,
@@ -32,6 +33,7 @@ import {
   buyDailyTitle,
   changeJob,
   claimDailyMission,
+  claimLoginBonus,
   combineOrb,
   cooldownSkipCost,
   canSkipBattleCooldown,
@@ -57,6 +59,7 @@ import {
   moveEquippedTitle,
   healAtInn,
   jobChangeCost,
+  loginBonusPreview,
   orbCombineCost,
   orbFreeSlots,
   orbInventoryCount,
@@ -96,7 +99,7 @@ import { publicPlayerDirectory } from './public-player-directory';
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
-type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | null;
+type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | null;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
 export function MinuteVanguardApp() {
@@ -116,6 +119,7 @@ export function MinuteVanguardApp() {
       if (cancelled) return;
       stateRef.current = loaded;
       setState(loaded);
+      if (loaded.gameData.pendingOrbReplacementItemId === null && loginBonusPreview(loaded).available) setModal('login');
     });
     return () => { cancelled = true; };
   }, []);
@@ -354,7 +358,13 @@ export function MinuteVanguardApp() {
         if (!result.accepted) setNotice(result.reason === 'level-too-low' ? '転職にはLv.30が必要です' : result.reason === 'insufficient-gold' ? '転職費用が足りません' : 'この職業はまだ解放されていません');
         else { commit(result.state, '転職しました'); setModal(null); }
       }} />}
-      {modal === 'menu' && <MenuModal onClose={() => setModal(null)} onReset={async () => {
+      {modal === 'login' && <LoginBonusModal state={state} onClose={() => setModal(null)} onClaim={() => {
+        const preview = loginBonusPreview(state);
+        const result = claimLoginBonus(state);
+        if (!result.accepted) setNotice('本日のログインボーナスは受取済みです');
+        else { commit(result.state, `ログイン${preview.day}日目の報酬を受け取りました`); setModal(null); }
+      }} />}
+      {modal === 'menu' && <MenuModal loginAvailable={loginBonusPreview(state).available} onLogin={() => setModal('login')} onClose={() => setModal(null)} onReset={async () => {
         if (!window.confirm('セーブデータを削除して最初から始めますか？')) return;
         const reset = await session.reset();
         commit(reset, '最初から始めました');
@@ -922,8 +932,21 @@ function JobModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => v
   return <ModalFrame title="転職" onClose={props.onClose}><div className="job-summary"><span>現在 Lv.{props.state.gameData.player.level}</span><strong>{currentJob(props.state).displayName}</strong><small>永続ボーナス条件 Lv.{requirement} / 費用 {cost.toLocaleString()}G</small></div><div className="job-list">{availableJobs(props.state).map((job) => <button key={job.id} onClick={() => props.onChange(job.id)} disabled={props.state.gameData.player.level < 30 || goldBalance(props.state) < cost}><span>♟</span><span><strong>{job.displayName}</strong><small>{job.skillName} — {job.skillDescription}</small></span><em>選ぶ</em></button>)}</div><p className="modal-description">転職するとLv.1へ戻ります。装備・ジェム・討伐数は保持されます。</p></ModalFrame>;
 }
 
-function MenuModal(props: Readonly<{ onClose: () => void; onReset: () => void }>) {
-  return <ModalFrame title="メニュー" onClose={props.onClose}><div className="menu-list"><button>？ 遊び方</button><button>💡 アイデア・要望</button><button>📜 アップデート履歴</button><button>⚙ 設定</button><button className="danger-button" onClick={props.onReset}>↻ データをリセット</button></div></ModalFrame>;
+function LoginBonusModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onClaim: () => void }>) {
+  const preview = loginBonusPreview(props.state);
+  return <ModalFrame title="ログインボーナス" onClose={props.onClose}>
+    <p className="modal-description">7日周期。1日空くと1日目へ戻ります。2〜6日目のGold額はMinute Vanguard独自バランスです。</p>
+    <div className="login-bonus-grid">{LOGIN_BONUS_REWARDS.map((reward) => {
+      const current = reward.day === preview.day;
+      const completed = preview.available ? preview.day > 1 && reward.day < preview.day : reward.day <= props.state.gameData.loginBonus.streakDay;
+      return <div key={reward.day} className={`${current ? 'current' : ''} ${completed ? 'completed' : ''}`}><b>{reward.day}日目</b><strong>{reward.gold.toLocaleString()} G</strong>{reward.gems > 0 && <em>＋💎 {reward.gems}</em>}</div>;
+    })}</div>
+    <button className="modal-primary login-claim-button" disabled={!preview.available} onClick={props.onClaim}>{preview.available ? `${preview.day}日目を受け取る · ${preview.gold.toLocaleString()}G${preview.gems > 0 ? ` + 💎${preview.gems}` : ''}` : '本日は受取済み'}</button>
+  </ModalFrame>;
+}
+
+function MenuModal(props: Readonly<{ loginAvailable: boolean; onLogin: () => void; onClose: () => void; onReset: () => void }>) {
+  return <ModalFrame title="メニュー" onClose={props.onClose}><div className="menu-list"><button className={props.loginAvailable ? 'attention' : ''} onClick={props.onLogin}>🎁 ログインボーナス {props.loginAvailable ? '· 受取可能' : ''}</button><button>？ 遊び方</button><button>💡 アイデア・要望</button><button>📜 アップデート履歴</button><button>⚙ 設定</button><button className="danger-button" onClick={props.onReset}>↻ データをリセット</button></div></ModalFrame>;
 }
 
 function ModalFrame(props: Readonly<{ title: string; onClose: () => void; children: React.ReactNode }>) {

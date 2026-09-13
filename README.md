@@ -31,6 +31,7 @@ Implemented in the current build:
 - F〜SSS orb gacha and special effects
 - nine jobs and Lv.30 job change with permanent-growth conditions
 - five deterministic JST-day missions selected from a 22-variant / five-category solo pool; 20 Gem daily total
+- seven-day JST login bonus with missed-day reset and public endpoint rewards
 - 30-kill pet capture eligibility, mutation capture, capture-support equipment, snack drops/training, active pet follow-up attack, and a 50-pet original gacha pool
 - 100 original monsters across Lv.1/Lv.2 (50 each), with encounter/defeat/mutation/capture codex records
 - next-battle Battle Boost (10 Gem, EXP/Gold ×2) and reward multiplier breakdown
