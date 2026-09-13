@@ -73,6 +73,7 @@ import {
   petTrainingLevel,
   purchaseTimeBoost,
   rerollOrbStats,
+  recoverDefeatGold,
   resolveOrbReplacement,
   resetEquippedTitles,
   setEquippedTitleLevel,
@@ -175,6 +176,16 @@ export function MinuteVanguardApp() {
     }
   };
 
+  const onRecoverDefeatGold = () => {
+    const amount = state.gameData.recoverableDefeatGold;
+    const result = recoverDefeatGold(state);
+    if (!result.accepted) {
+      setNotice(result.reason === 'insufficient-gems' ? '敗北Gold回収には100ジェムが必要です' : '回収できるGoldはありません');
+      return;
+    }
+    commit(result.state, `${amount.toLocaleString()}G を回収しました`);
+  };
+
   return (
     <div className="game-viewport">
       <header className="global-header">
@@ -210,7 +221,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMission={() => setModal('mission')} onJob={() => setModal('job')} />}
+        }} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -300,7 +311,7 @@ export function MinuteVanguardApp() {
         <NavButton icon="♛" label="ランキング" active={tab === 'ranking'} onClick={() => setTab('ranking')} />
       </nav>
 
-      {battleResult !== null && <BattleResultModal result={battleResult} step={battleStep} jobName={job.displayName} onClose={() => setBattleResult(null)} />}
+      {battleResult !== null && <BattleResultModal result={battleResult} step={battleStep} jobName={job.displayName} recoveryAmount={state.gameData.recoverableDefeatGold} onRecover={onRecoverDefeatGold} onClose={() => setBattleResult(null)} />}
       {battleResult === null && state.gameData.pendingOrbReplacementItemId !== null && <OrbReplacementModal state={state} onResolve={(discardItemId) => {
         const result = resolveOrbReplacement(state, discardItemId);
         if (!result.accepted) setNotice(result.reason === 'protected-item' ? '装備中・ロック・お気に入りのオーブは入れ替え対象にできません' : 'オーブの入れ替えを完了できません');
@@ -353,7 +364,7 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMission: () => void; onJob: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -392,6 +403,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
       <div><span className={`rarity-label rarity-${last.enemyRarity}`}>{last.enemyRarity.toUpperCase()}</span><strong>{last.enemyName}</strong></div>
       <div className={`result-badge ${last.outcome}`}>{last.outcome === 'victory' ? '勝利' : last.outcome === 'draw' ? '引き分け' : '敗北'}</div>
       <small>{last.goldDelta >= 0 ? `+${last.goldDelta.toLocaleString()}G` : `${last.goldDelta.toLocaleString()}G`} / +{last.expGained.toLocaleString()} EXP {last.gemGained > 0 ? `/ +${last.gemGained}💎` : ''}</small>
+      {state.gameData.recoverableDefeatGold > 0 && <button className="defeat-recovery-button" onClick={props.onRecover}>💎100 · {state.gameData.recoverableDefeatGold.toLocaleString()}G 回収</button>}
     </div>}
 
     <div className="quick-actions">
@@ -614,7 +626,7 @@ function RankingView({ state }: Readonly<{ state: MinuteVanguardState }>) {
   </section>;
 }
 
-function BattleResultModal(props: Readonly<{ result: BattleResult; step: number; jobName: string; onClose: () => void }>) {
+function BattleResultModal(props: Readonly<{ result: BattleResult; step: number; jobName: string; recoveryAmount: number; onRecover: () => void; onClose: () => void }>) {
   const currentTurn = props.step === 0 ? undefined : props.result.turns[Math.min(props.step - 1, props.result.turns.length - 1)];
   const playerHp = currentTurn?.playerHpAfter ?? props.result.playerHpStart;
   const enemyHp = currentTurn?.enemyHpAfter ?? props.result.enemyHpMax;
@@ -644,6 +656,7 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
       {props.result.capturedPetEnemyId && <p className="pet-capture-highlight">{props.result.capturedPetMutated ? '★ 変異種がなついた！ 成長ボーナス+1%' : '🐾 モンスターがなついて仲間になった！'}</p>}
       {props.result.petSnacksGained > 0 && <p className="pet-snack-highlight">🍖 おやつ +{props.result.petSnacksGained}</p>}
       {props.result.droppedTitleId && <p className="title-drop-highlight">◇ 肩書き「{titleDefinitions.find((definition) => definition.id === props.result.droppedTitleId)?.displayName ?? '???'}」{props.result.titleCopyAdded ? 'を獲得！' : 'はLv.5のため増えなかった'}</p>}
+      {props.result.outcome === 'defeat' && props.recoveryAmount > 0 && <button className="defeat-recovery-button modal-recovery" onClick={props.onRecover}>💎100で {props.recoveryAmount.toLocaleString()}G を回収</button>}
       <button className="modal-primary" onClick={props.onClose}>閉じる</button>
     </div>}
   </section></div>;

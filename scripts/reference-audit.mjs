@@ -6,6 +6,7 @@ const pages = {
 const checks = [
   ['guide', 'battle.beginner', ['最初の10体', '5秒', '60秒']],
   ['guide', 'battle.maxTurns', ['最大20ターン']],
+  ['guide', 'battle.defeatRecovery', ['敗北ゴールド回収', '100']],
   ['guide', 'battle.mutation', ['変異種', '1', '3 倍']],
   ['patchnotes', 'mutation.beginnerGuard', ['累計討伐20体まで', '変異種が出ません']],
   ['guide', 'mutation.captureBonus', ['変異種を捕獲すると成長ボーナス', '+ 1 %', '合わせて+2%']],

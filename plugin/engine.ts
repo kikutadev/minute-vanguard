@@ -219,6 +219,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       lastBattle: null,
       rareGuaranteeActive: false,
       battleBoostActive: false,
+      recoverableDefeatGold: 0,
       permanentUpgrades: {
         freeCooldownSkips: false,
         cooldownReduction: false,
@@ -262,6 +263,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         titleShop: state.gameData.titleShop ?? { dayKey: jstDayKey(nowMs), offeredTitleIds: computeDailyTitleOfferIds(jstDayKey(nowMs), state.gameData.titles ?? createProgressiveTitleCollection()), purchasedTitleIds: [] },
         missionProgress: normalizeDailyMissionProgress(state.gameData.missionProgress, jstDayKey(nowMs)),
         battleBoostActive: state.gameData.battleBoostActive ?? false,
+        recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
         recentVictoryMonsterLevels: state.gameData.recentVictoryMonsterLevels ?? [],
@@ -1016,6 +1018,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
         : nextState.gameData.recentVictoryMonsterLevels,
       rareGuaranteeActive: false,
       battleBoostActive: false,
+      recoverableDefeatGold: outcome === 'defeat' ? Math.max(0, -goldDelta) : 0,
       missionProgress: {
         ...nextState.gameData.missionProgress,
         battles: nextState.gameData.missionProgress.battles + 1,
@@ -1498,6 +1501,18 @@ export function goldBalance(state: MinuteVanguardState): number {
 
 export function gemBalance(state: MinuteVanguardState): number {
   return readCurrency(state.currencies, ids.currency.gem).toNumber();
+}
+
+export function recoverDefeatGold(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'no-recovery' | 'insufficient-gems'> {
+  const amount = state.gameData.recoverableDefeatGold;
+  if (amount <= 0) return reject(state, 'no-recovery');
+  const spend = spendCurrency(state, ids.currency.gem, 100, 'battle.defeat-recovery');
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const rewarded = grantCurrency(spend.state, ids.currency.gold, amount, 'battle.defeat-recovery');
+  const nextState: MinuteVanguardState = { ...rewarded, gameData: { ...rewarded.gameData, recoverableDefeatGold: 0 } };
+  return accept(nextState, [event(nextState, 'defeatGoldRecovered', `${state.gameData.totalBattles}`, { amount, gemCost: 100 })]);
 }
 
 export function goldBagOffers(state: MinuteVanguardState): readonly Readonly<{ id: GoldBagId; label: string; gemCost: number; goldAmount: number; available: boolean }>[] {

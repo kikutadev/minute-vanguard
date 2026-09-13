@@ -192,6 +192,7 @@ export type MinuteVanguardGameData = Readonly<{
   lastBattle: BattleResult | null;
   rareGuaranteeActive: boolean;
   battleBoostActive: boolean;
+  recoverableDefeatGold: number;
   permanentUpgrades: PermanentUpgradeState;
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];

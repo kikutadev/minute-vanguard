@@ -22,6 +22,7 @@ export const hero60Reference = {
     mutationChance: 0.01,
     mutationRewardMultiplier: 3,
     defeatGoldLossRatio: 0.5,
+    defeatGoldRecoveryGemCost: 100,
     defeatHp: 1,
     drawExpRatio: 0.05,
     boostedDrawExpRatio: 0.10,
