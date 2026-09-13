@@ -62,7 +62,7 @@ import {
 } from '../definitions/title-definitions';
 import { duplicateSnackRewardByRarity, gachaPetDefinitions, type GachaPetSpecialEffect } from '../definitions/gacha-pet-definitions';
 import { mimicBankGemCosts, mimicBankOutcomeForRoll, type MimicBankGemCost } from '../definitions/mimic-bank-definitions';
-import { soloAchievementDefinitions, type SoloAchievementDefinition, type SoloAchievementMetric } from '../definitions/achievement-definitions';
+import { arenaAchievementTierRank, soloAchievementDefinitions, type SoloAchievementDefinition, type SoloAchievementMetric } from '../definitions/achievement-definitions';
 import type {
   BattleLogEntry,
   BattleResult,
@@ -268,6 +268,8 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       newAchievementIds: [],
       selectedAchievementId: null,
       arenaMasterCrestOwned: false,
+      arenaBestTierRank: 0,
+      arenaChampionships: 0,
     },
   };
 }
@@ -293,6 +295,8 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         newAchievementIds: state.gameData.newAchievementIds ?? [],
         selectedAchievementId: state.gameData.selectedAchievementId ?? null,
         arenaMasterCrestOwned: state.gameData.arenaMasterCrestOwned ?? false,
+        arenaBestTierRank: state.gameData.arenaBestTierRank ?? 0,
+        arenaChampionships: state.gameData.arenaChampionships ?? 0,
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
         mimicBankGold: state.gameData.mimicBankGold ?? 0,
@@ -375,6 +379,8 @@ export function soloAchievementMetricValue(state: MinuteVanguardState, metricId:
     case 'titleMastered': return Object.values(state.gameData.titles.copies).filter((copies) => copies >= 15).length;
     case 'gold': return goldBalance(state);
     case 'playerLevel': return state.gameData.player.level;
+    case 'arenaBestTier': return state.gameData.arenaBestTierRank;
+    case 'arenaChampionships': return state.gameData.arenaChampionships;
   }
 }
 
@@ -407,6 +413,21 @@ export function evaluateSoloAchievements(state: MinuteVanguardState): Readonly<{
     },
   };
   return { state: nextState, events: result.events };
+}
+
+export function recordArenaTierReached(
+  state: MinuteVanguardState,
+  tierId: string,
+): CommandResult<MinuteVanguardState, 'unknown-arena-tier'> {
+  const tierRank = arenaAchievementTierRank(tierId);
+  if (tierRank <= 0) return reject(state, 'unknown-arena-tier');
+  if (tierRank <= state.gameData.arenaBestTierRank) return accept(state, []);
+  const updated: MinuteVanguardState = {
+    ...state,
+    gameData: { ...state.gameData, arenaBestTierRank: tierRank },
+  };
+  const evaluated = evaluateSoloAchievements(updated);
+  return accept(evaluated.state, [event(evaluated.state, 'arenaTierRecorded', tierId, { tierRank }), ...evaluated.events]);
 }
 
 export function selectAchievementTitle(
@@ -1968,7 +1989,7 @@ export function loginBonusPreview(state: MinuteVanguardState): LoginBonusPreview
 
 export function applyArenaSeasonReward(
   state: MinuteVanguardState,
-  reward: Readonly<{ receiptId: string; gold: number; gems: number; seasonKey: string; grantsMasterToken: boolean; champion: boolean }>,
+  reward: Readonly<{ receiptId: string; gold: number; gems: number; seasonKey: string; tierId: string; grantsMasterToken: boolean; champion: boolean }>,
 ): CommandResult<MinuteVanguardState, 'invalid-external-reward'> {
   if (reward.receiptId.length === 0 || !Number.isSafeInteger(reward.gold) || reward.gold < 0 || !Number.isSafeInteger(reward.gems) || reward.gems < 0) {
     return reject(state, 'invalid-external-reward');
@@ -1981,12 +2002,19 @@ export function applyArenaSeasonReward(
   nextState = {
     ...nextState,
     recentExternalRewardGrantIds: [...nextState.recentExternalRewardGrantIds, reward.receiptId].slice(-100),
-    gameData: { ...nextState.gameData, arenaMasterCrestOwned: nextState.gameData.arenaMasterCrestOwned || reward.grantsMasterToken },
+    gameData: {
+      ...nextState.gameData,
+      arenaMasterCrestOwned: nextState.gameData.arenaMasterCrestOwned || reward.grantsMasterToken,
+      arenaBestTierRank: Math.max(nextState.gameData.arenaBestTierRank, arenaAchievementTierRank(reward.tierId)),
+      arenaChampionships: nextState.gameData.arenaChampionships + (reward.champion ? 1 : 0),
+    },
   };
+  const evaluated = evaluateSoloAchievements(nextState);
+  nextState = evaluated.state;
   return accept(nextState, [event(nextState, 'arenaSeasonRewardApplied', reward.receiptId, {
     seasonKey: reward.seasonKey, gold: reward.gold, gems: reward.gems,
     grantsMasterToken: reward.grantsMasterToken, champion: reward.champion,
-  })]);
+  }), ...evaluated.events]);
 }
 
 export function claimLoginBonus(

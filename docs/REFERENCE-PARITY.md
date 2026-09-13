@@ -71,7 +71,7 @@
 - 戦闘背景: 参照側はモンスターレベル別＋朝/昼/夕/夜。公開確認できる更新時点はLv.1〜12。Minute Vanguardは独自13狩場へ拡張し、画像コピーなしのCSSシーンとして戦闘前/結果を統一。
 - 簡易戦闘: 結果モーダルなし・HP/EXP/Gold常時表示・1行ログ。オーブ満杯時の新ドロップは自動破棄、敗北Gold回収は通常画面のみ。
 - Mimic Bank: 手持ちGoldを預け、10/20/30 Gemで全額引き出し抽選。結果倍率は公開仕様どおり10% / 50% / 100% / 200%。投入Gem別の正確な確率は非公開のため、確率だけMinute Vanguard独自テーブルとして分離。
-- 称号（実績）: 参照側は300種以上・1つ選択して名前上に表示。Minute Vanguardは現在104種を実条件付きで実装し、Kit Achievement stateへ永続化。
+- 称号（実績）: 参照側は300種以上・1つ選択して名前上に表示。Minute Vanguardは現在115種を実条件付きで実装し、Kit Achievement stateへ永続化。
 - Battle Boost: 10 Gem prepaid, next monster battle EXP/Gold ×2, compatible with Rare Guarantee.
 - Inn: 10% of carried Gold, capped at Lv×100, free at 9G or less.
 - Gold bags: 30/100/300 Gem, based only on rolling last-ten monster-victory levels, unavailable before two wins, unaffected by current Gold multipliers. Exact payout equation remains product-owned because the public guide does not expose it.

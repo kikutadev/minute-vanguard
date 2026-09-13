@@ -6,7 +6,7 @@ import { applyArenaSeasonReward, createInitialState } from '../plugin/engine';
 describe('Arena season external reward', () => {
   it('applies a receipt only once even when the server returns it again before ACK', () => {
     const initial = createInitialState(0, 1201);
-    const receipt = { receiptId: 'arena-season:minute-vanguard:2026-09-07:p1', seasonKey: '2026-09-07', gold: 12_000, gems: 20, grantsMasterToken: false, champion: false } as const;
+    const receipt = { receiptId: 'arena-season:minute-vanguard:2026-09-07:p1', seasonKey: '2026-09-07', tierId: 'gold', gold: 12_000, gems: 20, grantsMasterToken: false, champion: false } as const;
     const first = applyArenaSeasonReward(initial, receipt);
     expect(first.accepted).toBe(true);
     if (!first.accepted) return;
@@ -22,7 +22,7 @@ describe('Arena season external reward', () => {
   });
   it('keeps the Master crest permanently when the receipt grants it', () => {
     const initial = createInitialState(0, 1202);
-    const result = applyArenaSeasonReward(initial, { receiptId: 'master-receipt', seasonKey: '2026-09-07', gold: 1, gems: 120, grantsMasterToken: true, champion: false });
+    const result = applyArenaSeasonReward(initial, { receiptId: 'master-receipt', seasonKey: '2026-09-07', tierId: 'master', gold: 1, gems: 120, grantsMasterToken: true, champion: false });
     expect(result.accepted).toBe(true);
     if (!result.accepted) return;
     expect(result.state.gameData.arenaMasterCrestOwned).toBe(true);

@@ -184,7 +184,7 @@ A full-screen Simple Battle mode is available from the monster-level row for low
 
 The solo build includes a high-risk Gold bank. Depositing moves all carried Gold into the bank without counting it as spending. Withdrawal consumes 10, 20 or 30 Gem and resolves the entire bank balance in one deterministic RNG roll: 10% returned, 50% returned, 100% returned or 200% returned. These four outcomes and the public 10–30 Gem range are reference-locked. The exact per-cost probability table is not public, so `mimicBankProductOwnedOdds` is explicitly Minute Vanguard-owned balance; higher Gem costs shift probability away from the worst result and toward 2×. Lifetime Gold lost to Mimic outcomes is retained locally. Simple Battle exposes deposit-only access; withdrawal stays in the normal Mimic Bank sheet.
 
-The solo collection also includes 104 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
+The solo collection also includes 115 original achievement titles backed by the Kit Achievement state. They track battle, codex, progression, pet, orb, title and wealth milestones, persist once earned, show NEW state until opened, and one earned title can be selected for display above the player name. The reference currently has 300+ titles; Minute Vanguard expands toward that count only with real conditions rather than placeholder names.
 
 ## Pets
 

@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { enemies } from '../definitions/game-definitions';
 import { soloAchievementDefinitions } from '../definitions/achievement-definitions';
 import type { MinuteVanguardState } from '../definitions/types';
-import { advanceFromWallClock, clearNewAchievementFlags, createInitialState, evaluateSoloAchievements, selectAchievementTitle, soloAchievementProgress } from '../plugin/engine';
+import { advanceFromWallClock, applyArenaSeasonReward, clearNewAchievementFlags, createInitialState, evaluateSoloAchievements, recordArenaTierReached, selectAchievementTitle, soloAchievementProgress } from '../plugin/engine';
 
 describe('solo achievement titles', () => {
-  it('ships 104 meaningful persistent achievement definitions', () => {
-    expect(soloAchievementDefinitions).toHaveLength(104);
-    expect(new Set(soloAchievementDefinitions.map((definition) => definition.id)).size).toBe(104);
+  it('ships 115 meaningful persistent achievement definitions', () => {
+    expect(soloAchievementDefinitions).toHaveLength(115);
+    expect(new Set(soloAchievementDefinitions.map((definition) => definition.id)).size).toBe(115);
     expect(soloAchievementDefinitions.every((definition) => definition.rewards.length === 0)).toBe(true);
   });
 
@@ -63,6 +63,36 @@ describe('solo achievement titles', () => {
     expect(cleared.accepted).toBe(true);
     if (!cleared.accepted) return;
     expect(cleared.state.gameData.selectedAchievementId).toBeNull();
+  });
+
+
+  it('records server-attested Arena tier achievements and never regresses them', () => {
+    const initial = createInitialState(0, 1205);
+    const bronze = recordArenaTierReached(initial, 'bronze');
+    expect(bronze.accepted).toBe(true);
+    if (!bronze.accepted) return;
+    expect(bronze.state.gameData.arenaBestTierRank).toBe(2);
+    expect(bronze.state.achievements['achievement.arenaTier.iron']).toBe(true);
+    expect(bronze.state.achievements['achievement.arenaTier.bronze']).toBe(true);
+    expect(bronze.state.achievements['achievement.arenaTier.silver']).not.toBe(true);
+    const lower = recordArenaTierReached(bronze.state, 'iron');
+    expect(lower.accepted).toBe(true);
+    if (!lower.accepted) return;
+    expect(lower.state.gameData.arenaBestTierRank).toBe(2);
+  });
+
+  it('unlocks the original weekly champion title only from a champion season receipt', () => {
+    const initial = createInitialState(0, 1206);
+    const result = applyArenaSeasonReward(initial, {
+      receiptId: 'champion-receipt', seasonKey: '2026-09-07', tierId: 'master', gold: 1, gems: 1,
+      grantsMasterToken: true, champion: true,
+    });
+    expect(result.accepted).toBe(true);
+    if (!result.accepted) return;
+    expect(result.state.gameData.arenaBestTierRank).toBe(10);
+    expect(result.state.gameData.arenaChampionships).toBe(1);
+    expect(result.state.achievements['achievement.arenaTier.master']).toBe(true);
+    expect(result.state.achievements['achievement.arenaChampion.1']).toBe(true);
   });
 
   it('runs achievement evaluation during the normal wall-clock tick even with no elapsed second', () => {

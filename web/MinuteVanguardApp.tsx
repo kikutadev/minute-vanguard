@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { PresentationQueueItem, PublicPlayerSnapshot } from 'idle-game-kit';
 import { BottomSheet, Motion, usePresentationQueue } from 'idle-game-kit/react';
 import { GameSession } from '../application/game-session';
@@ -88,6 +88,7 @@ import {
   purchaseTimeBoost,
   rerollOrbStats,
   recoverDefeatGold,
+  recordArenaTierReached,
   resolveOrbReplacement,
   resetEquippedTitles,
   setEquippedTitleLevel,
@@ -227,6 +228,16 @@ export function MinuteVanguardApp() {
     void session.save(next);
   };
 
+  const syncArenaTierAchievement = useCallback((tierId: string) => {
+    const current = stateRef.current;
+    if (current === null) return;
+    const result = recordArenaTierReached(current, tierId);
+    if (!result.accepted || result.state === current) return;
+    stateRef.current = result.state;
+    setState(result.state);
+    void session.save(result.state);
+  }, []);
+
   if (state === null) return <main className="boot-screen"><span className="boot-spinner">◆</span><p>冒険を読み込んでいます</p></main>;
 
   const stats = playerCombatStats(state);
@@ -303,7 +314,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onSimpleBattle={() => setSimpleBattleOpen(true)} onTapGame={() => setModal('tap-game')} onMimic={() => setModal('mimic-bank')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
+        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onSimpleBattle={() => setSimpleBattleOpen(true)} onTapGame={() => setModal('tap-game')} onMimic={() => setModal('mimic-bank')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} onArenaTier={syncArenaTierAchievement} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -390,7 +401,7 @@ export function MinuteVanguardApp() {
             window.clearTimeout(publicProfilePublishTimerRef.current);
             publicProfilePublishTimerRef.current = null;
           }
-        }} />}
+        }} onArenaTier={syncArenaTierAchievement} />}
       </div>
 
       {noticePresentation !== null && (
@@ -500,7 +511,7 @@ function formatCompactGold(value: number): string {
   return String(Math.floor(value));
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMimic: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMimic: () => void; onMission: () => void; onJob: () => void; onRecover: () => void; onArenaTier: (tierId: string) => void }>) {
   const { state } = props;
   const [battleMode, setBattleMode] = useState<'monster' | 'arena'>('monster');
   const cooldown = battleCooldown(state);
@@ -510,7 +521,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   const scene = battleSceneProps(state.gameData.selectedMonsterLevel);
   return <section className="battle-page page-section">
     <div className="section-tabs"><button className={battleMode === 'monster' ? 'active' : ''} onClick={() => setBattleMode('monster')}>⚔ モンスター戦</button><button className={battleMode === 'arena' ? 'active' : ''} onClick={() => setBattleMode('arena')}>🏆 アリーナ</button></div>
-    {battleMode === 'arena' ? <ArenaView state={state} /> : <>
+    {battleMode === 'arena' ? <ArenaView state={state} onArenaTier={props.onArenaTier} /> : <>
     <div className="battle-control-card">
       <div className="monster-level-row"><span>モンスターレベル</span><div className="monster-level-control"><button disabled={state.gameData.selectedMonsterLevel <= 1} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel - 1)}>‹</button><strong>{state.gameData.selectedMonsterLevel}</strong><button disabled={state.gameData.selectedMonsterLevel >= unlockedMonsterLevel(state)} onClick={() => props.onMonsterLevel(state.gameData.selectedMonsterLevel + 1)}>›</button></div><small>解放 1–{unlockedMonsterLevel(state)}</small><button className="simple-battle-open" onClick={props.onSimpleBattle}>簡易</button><span className="online-dot">● 1人プレイ</span></div>
       <div className={`battle-illustration ${scene.className}`} data-scene={scene.label}>
@@ -556,7 +567,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   </section>;
 }
 
-function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
+function ArenaView({ state, onArenaTier }: Readonly<{ state: MinuteVanguardState; onArenaTier: (tierId: string) => void }>) {
   const [arena, setArena] = useState<ArenaPlayerView | null>(null);
   const [leaderboard, setLeaderboard] = useState<readonly ArenaLeaderboardEntry[]>([]);
   const [history, setHistory] = useState<readonly ArenaHistoryEntry[]>([]);
@@ -572,6 +583,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     const online = getMinuteVanguardOnlineClient();
     const [me, board, hallEntries] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10), online.listArenaHall()]);
     setArena(me);
+    if (me !== null) onArenaTier(me.tierId);
     setLeaderboard(board);
     setHall(hallEntries);
     setHistory(me === null ? [] : await online.listArenaHistory());
@@ -585,6 +597,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
         const [me, board, hallEntries] = await Promise.all([online.getArena(), online.listArenaLeaderboard(10), online.listArenaHall()]);
         if (cancelled) return;
         setArena(me);
+        if (me !== null) onArenaTier(me.tierId);
         setLeaderboard(board); setHall(hallEntries);
         if (me !== null) setHistory(await online.listArenaHistory());
       } catch {
@@ -594,14 +607,15 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [onArenaTier]);
 
 
   const join = async () => {
     setBusy(true); setError(null);
     try {
       const online = getMinuteVanguardOnlineClient();
-      setArena(await online.joinArena(state));
+      const joined = await online.joinArena(state);
+      setArena(joined); onArenaTier(joined.tierId);
       setLeaderboard(await online.listArenaLeaderboard(10));
       setHistory(await online.listArenaHistory());
     } catch { setError('アリーナ参加に失敗しました'); }
@@ -612,7 +626,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
     setBusy(true); setError(null);
     try {
       const result = await getMinuteVanguardOnlineClient().randomArenaBattle();
-      setArena(result.arena);
+      setArena(result.arena); onArenaTier(result.arena.tierId);
       setBattle(result.battle);
       const online = getMinuteVanguardOnlineClient();
       const [board, nextHistory] = await Promise.all([online.listArenaLeaderboard(10), online.listArenaHistory()]);
@@ -1025,7 +1039,7 @@ function CollectionView(props: Readonly<{ state: MinuteVanguardState; onAchievem
   </section>;
 }
 
-function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVanguardState; onPublishingChanged: (enabled: boolean) => void }>) {
+function RankingView({ state, onPublishingChanged, onArenaTier }: Readonly<{ state: MinuteVanguardState; onPublishingChanged: (enabled: boolean) => void; onArenaTier: (tierId: string) => void }>) {
   type RankingTab = 'recent' | PublicLeaderboardMetric | 'arena';
   const [rankingTab, setRankingTab] = useState<RankingTab>('recent');
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -1050,6 +1064,7 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
           if (cancelled) return;
           setArenaEntries(entries);
           setArenaMe(me);
+          if (me !== null) onArenaTier(me.tierId);
           setRemotePlayers([]);
           setRemoteStatus('ready');
         })
@@ -1077,7 +1092,7 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
         setRemoteStatus('error');
       });
     return () => { cancelled = true; };
-  }, [rankingTab, refreshSequence]);
+  }, [rankingTab, refreshSequence, onArenaTier]);
 
   const selected = remotePlayers.find((player) => player.playerId === selectedPlayerId);
   const togglePublishing = async () => {
@@ -1115,7 +1130,7 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
     try {
       const online = getMinuteVanguardOnlineClient();
       const result = await online.challengeArenaPlayer(defenderId);
-      setArenaMe(result.arena);
+      setArenaMe(result.arena); onArenaTier(result.arena.tierId);
       setArenaBattle(result.battle);
       setArenaEntries(await online.listArenaLeaderboard(20));
     } catch (caught) {

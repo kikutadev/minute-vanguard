@@ -255,6 +255,8 @@ export type MinuteVanguardGameData = Readonly<{
   newAchievementIds: readonly string[];
   selectedAchievementId: string | null;
   arenaMasterCrestOwned: boolean;
+  arenaBestTierRank: number;
+  arenaChampionships: number;
 }>;
 
 export type MinuteVanguardState = GameState<MinuteVanguardGameData>;
