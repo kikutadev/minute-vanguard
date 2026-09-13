@@ -17,6 +17,8 @@ export const ids = {
     trainingSword: 'item.training_sword', ironSword: 'item.iron_sword', arcaneRod: 'item.arcane_rod',
     travelClothes: 'item.travel_clothes', ironMail: 'item.iron_mail', mysticRobe: 'item.mystic_robe',
     orb: 'item.orb',
+    trailCrook: 'item.trail_crook', lureCodex: 'item.lure_codex',
+    trackerVest: 'item.tracker_vest', whisperCloak: 'item.whisper_cloak',
   },
 } as const;
 
@@ -35,6 +37,10 @@ export const itemDefinitions: Readonly<Record<string, ItemDefinition>> = {
   [ids.item.ironMail]: { id: ids.item.ironMail, displayName: '鉄の鎧', tags: ['armor'] },
   [ids.item.mysticRobe]: { id: ids.item.mysticRobe, displayName: '星布のローブ', tags: ['armor'] },
   [ids.item.orb]: { id: ids.item.orb, displayName: 'オーブ', tags: ['orb'] },
+  [ids.item.trailCrook]: { id: ids.item.trailCrook, displayName: '追跡の杖', tags: ['weapon'] },
+  [ids.item.lureCodex]: { id: ids.item.lureCodex, displayName: '誘いの魔導書', tags: ['weapon'] },
+  [ids.item.trackerVest]: { id: ids.item.trackerVest, displayName: '足跡読みのベスト', tags: ['armor'] },
+  [ids.item.whisperCloak]: { id: ids.item.whisperCloak, displayName: '気配寄せの外套', tags: ['armor'] },
 };
 
 export const loadoutDefinition: LoadoutDefinition = {
@@ -204,6 +210,13 @@ export const shopEquipmentOffers = [
   { itemDefinitionId: ids.item.ironSword, price: 260, data: { kind: 'weapon', rarity: 'uncommon', upgradeRank: 0, flatStats: { attack: 15 }, source: 'shop' } as const },
   { itemDefinitionId: ids.item.arcaneRod, price: 280, data: { kind: 'weapon', rarity: 'uncommon', upgradeRank: 0, flatStats: { magicAttack: 16 }, source: 'shop' } as const },
   { itemDefinitionId: ids.item.ironMail, price: 260, data: { kind: 'armor', rarity: 'uncommon', upgradeRank: 0, flatStats: { defense: 12, magicDefense: 5 }, source: 'shop' } as const },
+] as const;
+
+export const specialEquipmentOffers = [
+  { itemDefinitionId: ids.item.trailCrook, price: 2000, data: { kind: 'weapon', rarity: 'epic', upgradeRank: 0, flatStats: { attack: 5 }, captureMultiplier: 2, source: 'special-shop' } as const },
+  { itemDefinitionId: ids.item.lureCodex, price: 2000, data: { kind: 'weapon', rarity: 'epic', upgradeRank: 0, flatStats: { magicAttack: 5 }, captureMultiplier: 2, source: 'special-shop' } as const },
+  { itemDefinitionId: ids.item.trackerVest, price: 2000, data: { kind: 'armor', rarity: 'epic', upgradeRank: 0, flatStats: { defense: 5 }, captureMultiplier: 2, source: 'special-shop' } as const },
+  { itemDefinitionId: ids.item.whisperCloak, price: 2000, data: { kind: 'armor', rarity: 'epic', upgradeRank: 0, flatStats: { defense: 3, magicDefense: 5 }, captureMultiplier: 2, source: 'special-shop' } as const },
 ] as const;
 
 export const permanentUpgradeDefinitions = [

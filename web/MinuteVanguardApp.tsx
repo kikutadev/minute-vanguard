@@ -13,6 +13,7 @@ import {
   orbRanks,
   permanentUpgradeDefinitions,
   shopEquipmentOffers,
+  specialEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
@@ -24,6 +25,7 @@ import {
   availableJobs,
   battleCooldown,
   buyEquipment,
+  buySpecialEquipment,
   buyGoldBag,
   buyPetSnacks,
   buyPermanentUpgrade,
@@ -61,6 +63,7 @@ import {
   orbRerollCost,
   playerCombatStats,
   petCatalogEntry,
+  petCaptureEquipmentMultiplier,
   petGachaSingleCost,
   dailyPetPickupId,
   ownedPetIds,
@@ -211,6 +214,10 @@ export function MinuteVanguardApp() {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
           else commit(result.state, '装備を購入しました');
+        }} onBuySpecial={(definitionId) => {
+          const result = buySpecialEquipment(state, definitionId);
+          if (!result.accepted) setNotice('特殊装備には2,000ジェムが必要です');
+          else commit(result.state, '捕獲率アップ装備を購入しました');
         }} onOrbDraw={(count) => {
           const result = drawOrb(state, count);
           if (!result.accepted) setNotice(result.reason === 'insufficient-orb-slots' ? `空き枠が足りません（残り ${orbFreeSlots(state)}）` : 'オーブガチャに必要なジェムが足りません');
@@ -389,7 +396,7 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
   </section>;
 }
 
-function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onPetGacha: (count: 1 | 10) => void; onPetTrain: (enemyId: string) => void; onPetBuySnacks: () => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
+function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: EquipmentTab; setActive: (tab: EquipmentTab) => void; onSelect: (id: string) => void; onBuy: (definitionId: string) => void; onBuySpecial: (definitionId: string) => void; onOrbDraw: (count: 1 | 10) => void; onOrbExpand: () => void; onCombineOpen: () => void; onPetToggle: (enemyId: string, active: boolean) => void; onPetGacha: (count: 1 | 10) => void; onPetTrain: (enemyId: string) => void; onPetBuySnacks: () => void; onTitleEquip: (titleId: string, level: number) => void; onTitleLevel: (titleId: string, level: number) => void; onTitleMove: (titleId: string, targetIndex: number) => void; onTitleUnequip: (titleId: string) => void; onTitleReset: () => void; onTitleFavorite: (titleId: string) => void }>) {
   const { state } = props;
   const inventory = props.active === 'weapon' || props.active === 'armor' || props.active === 'orb'
     ? Object.values(state.gameData.inventory).filter((item) => item.data?.kind === props.active)
@@ -419,6 +426,14 @@ function EquipmentView(props: Readonly<{ state: MinuteVanguardState; active: Equ
           <span className="equipment-icon">{offer.data.kind === 'weapon' ? '⚔' : '🛡'}</span>
           <span><strong>{itemDefinitions[offer.itemDefinitionId]?.displayName}</strong><small>{formatFlatStats(offer.data.flatStats)}</small></span>
           <em>{offer.price.toLocaleString()} G</em>
+        </button>)}
+      </div>
+      <h2 className="list-heading">捕獲支援装備</h2>
+      <div className="item-list special-equipment-list">
+        {specialEquipmentOffers.filter((offer) => offer.data.kind === props.active).map((offer) => <button className="shop-equipment-row special" key={offer.itemDefinitionId} onClick={() => props.onBuySpecial(offer.itemDefinitionId)}>
+          <span className="equipment-icon">{offer.data.kind === 'weapon' ? '🪄' : '🥾'}</span>
+          <span><strong>{itemDefinitions[offer.itemDefinitionId]?.displayName}</strong><small>{formatFlatStats(offer.data.flatStats)} · ペット捕獲率 ×{offer.data.captureMultiplier}</small></span>
+          <em>💎 {offer.price.toLocaleString()}</em>
         </button>)}
       </div>
     </> : props.active === 'orb' ? <OrbView state={state} inventory={inventory} onSelect={props.onSelect} onDraw={props.onOrbDraw} onExpand={props.onOrbExpand} onCombine={props.onCombineOpen} /> : props.active === 'pet' ? <PetView state={state} onToggle={props.onPetToggle} onGacha={props.onPetGacha} onTrain={props.onPetTrain} onBuySnacks={props.onPetBuySnacks} /> : <TitleView state={state} onEquip={props.onTitleEquip} onLevel={props.onTitleLevel} onMove={props.onTitleMove} onUnequip={props.onTitleUnequip} onReset={props.onTitleReset} onFavorite={props.onTitleFavorite} />}
@@ -621,6 +636,7 @@ function BattleResultModal(props: Readonly<{ result: BattleResult; step: number;
       {props.result.levelGrowths.map((growth) => <p key={growth.level} className={growth.greatGrowth ? 'great-growth' : ''}>Lv.{growth.level} UP {growth.greatGrowth ? '★ 大成長！' : ''}</p>)}
       {(props.result.droppedItemInstanceId || props.result.droppedOrbInstanceId) && <p>🎁 ドロップを獲得しました</p>}
       {props.result.capturedPetEnemyId && <p className="pet-capture-highlight">{props.result.capturedPetMutated ? '★ 変異種がなついた！ 成長ボーナス+1%' : '🐾 モンスターがなついて仲間になった！'}</p>}
+      {props.result.petSnacksGained > 0 && <p className="pet-snack-highlight">🍖 おやつ +{props.result.petSnacksGained}</p>}
       {props.result.droppedTitleId && <p className="title-drop-highlight">◇ 肩書き「{titleDefinitions.find((definition) => definition.id === props.result.droppedTitleId)?.displayName ?? '???'}」{props.result.titleCopyAdded ? 'を獲得！' : 'はLv.5のため増えなかった'}</p>}
       <button className="modal-primary" onClick={props.onClose}>閉じる</button>
     </div>}
@@ -691,11 +707,15 @@ function PetView(props: Readonly<{ state: MinuteVanguardState; onToggle: (petId:
   const snackRemaining = petSnackAutoRemainingSec(props.state);
   const pickup = petCatalogEntry(dailyPetPickupId(props.state));
   const singleCost = petGachaSingleCost(props.state);
+  const captureGearMultiplier = petCaptureEquipmentMultiplier(props.state);
+  const tamerMultiplier = currentJob(props.state).id === 'job.tamer' ? 1.5 : 1;
+  const baseCapturePct = captureGearMultiplier * tamerMultiplier;
   return <div className="pet-view">
     <div className="pet-party-summary">
       <div><span>参戦中</span><strong>{props.state.gameData.activePetEnemyIds.length} / {activeLimit}</strong></div>
       <div><span>総訓練Lv</span><strong>{totalTraining}</strong><small>成長 +{growthBonus}%</small></div>
       <small>捕獲・ガチャ限定をまとめて編成。訓練したペットほど追撃が強くなります。</small>
+      <small className="pet-capture-rate">捕獲基礎 {baseCapturePct.toFixed(baseCapturePct % 1 === 0 ? 0 : 1)}% · 装備 ×{captureGearMultiplier}{tamerMultiplier > 1 ? ' · テイマー ×1.5' : ''}</small>
     </div>
     <div className="pet-pickup-card">
       <span className="pet-glyph">{pickup?.glyph ?? '🐾'}</span><div><small>今日のピックアップ · 排出率×2</small><strong>{pickup?.displayName ?? '???'}</strong><em>{pickup?.rarity.toUpperCase() ?? ''}</em></div>

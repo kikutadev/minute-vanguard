@@ -49,6 +49,7 @@ export type EquipmentData = Readonly<{
   effectLevel?: number;
   favorite?: boolean;
   locked?: boolean;
+  captureMultiplier?: number;
   source: string;
 }>;
 
@@ -133,6 +134,7 @@ export type BattleResult = Readonly<{
   goldBreakdown: readonly RewardBreakdownEntry[];
   expBreakdown: readonly RewardBreakdownEntry[];
   gemGained: number;
+  petSnacksGained: number;
   streak: number;
   streakMultiplier: number;
   jackpotMultiplier: number;

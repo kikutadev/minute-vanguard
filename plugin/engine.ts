@@ -47,6 +47,7 @@ import {
   permanentUpgradeDefinitions,
   rarityOrder,
   shopEquipmentOffers,
+  specialEquipmentOffers,
   type PermanentUpgradeId,
 } from '../definitions/game-definitions';
 import {
@@ -516,6 +517,20 @@ export function petTrainingLevel(state: MinuteVanguardState, enemyId: string): n
   return state.gameData.petTraining[enemyId]?.trainingLevel ?? 0;
 }
 
+export function petCaptureEquipmentMultiplier(state: MinuteVanguardState): number {
+  let multiplier = 1;
+  for (const slot of ['weapon', 'armor'] as const) {
+    const itemId = state.gameData.loadout.equipped[slot];
+    if (itemId === null || itemId === undefined) continue;
+    multiplier *= state.gameData.inventory[itemId]?.data?.captureMultiplier ?? 1;
+  }
+  return Math.min(4, multiplier);
+}
+
+export function petSnackDropChance(mutated: boolean): number {
+  return mutated ? 0.15 : 0.05;
+}
+
 export function petSnackAutoRemainingSec(state: MinuteVanguardState): number {
   if (state.gameData.petSnacks >= PET_SNACK_AUTO_CAP) return 0;
   return Math.max(1, PET_SNACK_AUTO_INTERVAL_SEC - state.gameData.petSnackRemainderSec);
@@ -783,6 +798,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
   let droppedOrbInstanceId: string | null = null;
   let capturedPetEnemyId: string | null = null;
   let capturedPetMutated = false;
+  let petSnacksGained = 0;
   let droppedTitleId: string | null = null;
   let titleCopyAdded = false;
 
@@ -858,6 +874,14 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
       droppedOrbInstanceId = dropped.itemInstanceId;
     }
 
+    // Public behavior guarantees low-probability snack drops and ×3 mutation weighting,
+    // but not the exact base probability. Minute Vanguard owns the 5% base rate.
+    const snackRoll = draw(nextState, ids.rng.loot); nextState = snackRoll.state;
+    if (snackRoll.value < petSnackDropChance(mutated)) {
+      petSnacksGained = 1;
+      nextState = { ...nextState, gameData: { ...nextState.gameData, petSnacks: nextState.gameData.petSnacks + 1 } };
+    }
+
     const killsAfterThisBattle = (nextState.gameData.killCounts[enemy.id] ?? 0) + 1;
     const normalPetOwned = nextState.gameData.ownedPetEnemyIds.includes(enemy.id);
     const mutatedPetOwned = nextState.gameData.mutatedPetEnemyIds.includes(enemy.id);
@@ -865,7 +889,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     if (killsAfterThisBattle >= 30 && captureNeeded) {
       const captureRoll = draw(nextState, ids.rng.loot);
       nextState = captureRoll.state;
-      const captureChance = 0.01 * (job.id === 'job.tamer' ? 1.5 : 1) + titleEffectValue(nextState, 'capture');
+      const captureChance = Math.min(1, 0.01 * petCaptureEquipmentMultiplier(nextState) * (job.id === 'job.tamer' ? 1.5 : 1) + titleEffectValue(nextState, 'capture'));
       if (captureRoll.value < captureChance) {
         capturedPetEnemyId = enemy.id;
         capturedPetMutated = mutated;
@@ -1038,6 +1062,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     firstDefeat,
     capturedPetEnemyId,
     capturedPetMutated,
+    petSnacksGained,
     droppedTitleId,
     titleCopyAdded,
   };
@@ -1048,7 +1073,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
 
   return accept(nextState, [event(nextState, 'battleResolved', `${battleIndex}`, {
     enemyId: enemy.id, outcome, mutated, goldDelta, expGained, gemGained, streak, jackpotMultiplier,
-    droppedItemInstanceId, droppedOrbInstanceId, capturedPetEnemyId, capturedPetMutated,
+    droppedItemInstanceId, droppedOrbInstanceId, capturedPetEnemyId, capturedPetMutated, petSnacksGained,
   })]);
 }
 
@@ -1074,6 +1099,27 @@ export function buyEquipment(
     },
   };
   return accept(nextState, [event(nextState, 'equipmentPurchased', granted.itemInstanceId, { itemDefinitionId, price: offer.price })]);
+}
+
+export function buySpecialEquipment(
+  state: MinuteVanguardState,
+  itemDefinitionId: string,
+): CommandResult<MinuteVanguardState, 'unknown-offer' | 'insufficient-gems'> {
+  const offer = specialEquipmentOffers.find((candidate) => candidate.itemDefinitionId === itemDefinitionId);
+  if (offer === undefined) return reject(state, 'unknown-offer');
+  const spend = spendCurrency(state, ids.currency.gem, offer.price, `equipment.special.${itemDefinitionId}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const granted = grantItem(spend.state, itemDefinitionId, offer.data);
+  const equipped = equipOwnedItem(granted.state, granted.itemInstanceId);
+  const equippedState = equipped.accepted ? equipped.state : granted.state;
+  const nextState: MinuteVanguardState = {
+    ...equippedState,
+    gameData: {
+      ...equippedState.gameData,
+      missionProgress: { ...equippedState.gameData.missionProgress, equipmentBuys: equippedState.gameData.missionProgress.equipmentBuys + 1 },
+    },
+  };
+  return accept(nextState, [event(nextState, 'specialEquipmentPurchased', granted.itemInstanceId, { itemDefinitionId, price: offer.price })]);
 }
 
 /** Backward-compatible alias kept for existing simulator/tests while the UI now treats purchases as Equipment-tab actions. */

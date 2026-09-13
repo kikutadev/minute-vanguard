@@ -149,6 +149,7 @@ A monster becomes capture-eligible after 30 successful defeats. Every later vict
 - the second Tamer pet contributes at reduced power
 
 Pet training is implemented: snacks auto-charge once per hour until the free-charge threshold of 100, paid snack bundles add 100 for 100 Gem, each snack raises one pet training level, total training levels grant +1% level-up growth per 20 levels, and trained pets increase follow-up damage. Pet gacha is also implemented with 50 original limited pets: first single 100 Gem, later singles 300 Gem, ten pulls 3,000 Gem, a shared JST-day pickup at double weight, no ten-pull guarantee, and duplicate conversion into rarity-scaled snacks.
+Four original capture-support equipment pieces are sold for 2,000 Gem each. A support weapon or armor doubles the base capture roll; weapon + armor stack to ×4, and Tamer's ×1.5 modifier stacks on top. Monster victories also have a product-owned low-probability snack drop; mutated victories use the public ×3 drop weighting.
 
 ## Daily missions
 

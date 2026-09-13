@@ -131,7 +131,7 @@ export const hero60Reference = {
     maxedDropsAreWasted: true,
     clearsOnJobChange: true,
   },
-  pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2, growthBonusPctPerOwnedPet: 1, snackAutoIntervalSec: 3600, snackNaturalCap: 100, snackBundleGemCost: 100, snackBundleSize: 100, trainingLevelsPerGrowthBonusPct: 20, gachaLimitedCount: 50, gachaFirstSingleCost: 100, gachaSingleCost: 300, gachaTenCost: 3000, dailyPickupMultiplier: 2, tenPullGuarantee: false, duplicateSnacks: { common: 100, uncommon: 100, rare: 200, epic: 225, legendary: 250, boss: 300 } as const },
+  pet: { unlockKills: 30, captureChance: 0.01, maxPerMonster: 1, normalActiveSlots: 1, tamerActiveSlots: 2, growthBonusPctPerOwnedPet: 1, captureSupportGemCost: 2000, captureSupportMultiplierPerSlot: 2, captureSupportMaxMultiplier: 4, snackAutoIntervalSec: 3600, snackNaturalCap: 100, snackBundleGemCost: 100, snackBundleSize: 100, trainingLevelsPerGrowthBonusPct: 20, gachaLimitedCount: 50, gachaFirstSingleCost: 100, gachaSingleCost: 300, gachaTenCost: 3000, dailyPickupMultiplier: 2, tenPullGuarantee: false, duplicateSnacks: { common: 100, uncommon: 100, rare: 200, epic: 225, legendary: 250, boss: 300 } as const },
   daily: { missionCount: 5, categoryCount: 5, candidatePoolCount: 22, resetHourJst: 0, rewardByCompletedCount: [3, 3, 4, 5, 5] as const, totalGemReward: 20, loginCycleDays: 7 },
   navigation: {
     bottomTabs: ['ショップ', '装備', 'バトル', 'コレクション', 'ランキング'] as const,
