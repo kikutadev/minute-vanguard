@@ -37,6 +37,7 @@
 - オーブ F〜SSS、単発100 / 10連1,000
 - 10連 A以上1個 + 特殊効果1個以上
 - オーブ10枠、1枠100Gemで拡張
+- 満杯時の戦闘ドロップは一時保留し、新ドロップ破棄または未保護の手持ちオーブとの入れ替えを必須化
 - 再抽選: 総%維持、最大3能力固定、50/100/200/400Gem
 - 合成: 親1 + 同ランク素材4、成功確定、親ID維持
 - 合成Gold価格 E〜SSS
@@ -79,10 +80,9 @@
 
 ### Next implementation gaps
 
-1. Orb replacement flow when inventory is full
-2. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
-3. Login bonus 7-day cycle
-4. Server boundary for real ranking / PvP / raid
+1. Mimic Bank: 10% / 50% / 100% / 200% outcome flow
+2. Login bonus 7-day cycle
+3. Server boundary for real ranking / PvP / raid
 
 ### Additional solo parity locked in current implementation
 

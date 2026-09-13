@@ -237,6 +237,7 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       petSnackRemainderSec: 0,
       petGachaSingleDiscountUsed: false,
       orbCapacity: ORB_BASE_CAPACITY,
+      pendingOrbReplacementItemId: null,
       timeBoosts: { rush: 0, exp: 0, gold: 0 },
       titles: createProgressiveTitleCollection(),
       favoriteTitleIds: [],
@@ -254,6 +255,7 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
       gameData: {
         ...state.gameData,
         orbCapacity: state.gameData.orbCapacity ?? ORB_BASE_CAPACITY,
+        pendingOrbReplacementItemId: state.gameData.pendingOrbReplacementItemId ?? null,
         timeBoosts: state.gameData.timeBoosts ?? { rush: 0, exp: 0, gold: 0 },
         titles: state.gameData.titles ?? createProgressiveTitleCollection(),
         favoriteTitleIds: state.gameData.favoriteTitleIds ?? [],
@@ -645,7 +647,8 @@ export function expRequiredForNextLevel(level: number): number {
   return Math.max(20, Math.round(25 + 18 * Math.pow(level, 1.22)));
 }
 
-export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardState, 'cooldown-active'> {
+export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardState, 'cooldown-active' | 'orb-replacement-required'> {
+  if (state.gameData.pendingOrbReplacementItemId !== null) return reject(state, 'orb-replacement-required');
   if (!battleCooldown(state).ready) return reject(state, 'cooldown-active');
 
   let nextState = state;
@@ -868,9 +871,12 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     }
     const orbRoll = draw(nextState, ids.rng.loot); nextState = orbRoll.state;
     const orbRate = enemy.orbDropChance * (nextState.gameData.permanentUpgrades.orbDropMultiplier ? 1.5 : 1) * rewardMultiplier;
-    if (orbRoll.value < orbRate && orbFreeSlots(nextState) > 0) {
+    if (orbRoll.value < orbRate) {
+      const hadFreeSlot = orbFreeSlots(nextState) > 0;
       const dropped = createOrb(nextState, enemy.rarity, false);
-      nextState = dropped.state;
+      nextState = hadFreeSlot
+        ? dropped.state
+        : { ...dropped.state, gameData: { ...dropped.state.gameData, pendingOrbReplacementItemId: dropped.itemInstanceId } };
       droppedOrbInstanceId = dropped.itemInstanceId;
     }
 
@@ -1203,10 +1209,33 @@ export function orbFreeSlots(state: MinuteVanguardState): number {
   return Math.max(0, state.gameData.orbCapacity - orbInventoryCount(state));
 }
 
+export function resolveOrbReplacement(
+  state: MinuteVanguardState,
+  discardItemId: string,
+): CommandResult<MinuteVanguardState, 'no-pending-orb' | 'invalid-replacement' | 'protected-item'> {
+  const pendingId = state.gameData.pendingOrbReplacementItemId;
+  if (pendingId === null) return reject(state, 'no-pending-orb');
+  const pending = state.gameData.inventory[pendingId];
+  const discard = state.gameData.inventory[discardItemId];
+  if (pending?.data?.kind !== 'orb' || discard?.data?.kind !== 'orb') return reject(state, 'invalid-replacement');
+  if (discardItemId !== pendingId) {
+    const equipped = state.gameData.loadout.equipped.orb === discardItemId;
+    if (equipped || discard.data.favorite === true || discard.data.locked === true) return reject(state, 'protected-item');
+  }
+  const removed = removeItemInstance(state.gameData.inventory, discardItemId);
+  if (!removed.accepted) return reject(state, 'invalid-replacement');
+  const nextState: MinuteVanguardState = {
+    ...state,
+    gameData: { ...state.gameData, inventory: removed.inventory, pendingOrbReplacementItemId: null },
+  };
+  return accept(nextState, [event(nextState, 'orbReplacementResolved', `${pendingId}:${discardItemId}`, { pendingId, discardItemId, keptNewOrb: discardItemId !== pendingId })]);
+}
+
 export function drawOrb(
   state: MinuteVanguardState,
   count: 1 | 10,
-): CommandResult<MinuteVanguardState, 'insufficient-gems' | 'insufficient-orb-slots'> {
+): CommandResult<MinuteVanguardState, 'insufficient-gems' | 'insufficient-orb-slots' | 'orb-replacement-required'> {
+  if (state.gameData.pendingOrbReplacementItemId !== null) return reject(state, 'orb-replacement-required');
   if (orbFreeSlots(state) < count) return reject(state, 'insufficient-orb-slots');
   const spend = spendCurrency(state, ids.currency.gem, count * 100, `orb.gacha.${count}`);
   if (!spend.accepted) return reject(state, 'insufficient-gems');

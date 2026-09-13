@@ -203,6 +203,7 @@ export type MinuteVanguardGameData = Readonly<{
   petSnackRemainderSec: number;
   petGachaSingleDiscountUsed: boolean;
   orbCapacity: number;
+  pendingOrbReplacementItemId: string | null;
   timeBoosts: TimeBoostState;
   titles: ProgressiveTitleCollectionState;
   favoriteTitleIds: readonly string[];

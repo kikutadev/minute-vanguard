@@ -90,6 +90,7 @@ export const hero60Reference = {
     tenPullGuaranteesRankAOrHigher: true,
     tenPullGuaranteesSpecialEffect: true,
     baseCapacity: 10,
+    fullInventoryReplacement: true,
     capacityExpansionGemCost: 100,
     rerollCostsByLockedStats: [50, 100, 200, 400] as const,
     maxRerollLockedStats: 3,

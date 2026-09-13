@@ -73,6 +73,7 @@ import {
   petTrainingLevel,
   purchaseTimeBoost,
   rerollOrbStats,
+  resolveOrbReplacement,
   resetEquippedTitles,
   setEquippedTitleLevel,
   timeBoostRemainingSec,
@@ -163,7 +164,7 @@ export function MinuteVanguardApp() {
   const onFight = () => {
     const result = fight(state);
     if (!result.accepted) {
-      setNotice(`あと ${battleCooldown(state).remainingSec}秒 待つ必要があります`);
+      setNotice(result.reason === 'orb-replacement-required' ? '先にドロップしたオーブの入れ替えを決めてください' : `あと ${battleCooldown(state).remainingSec}秒 待つ必要があります`);
       return;
     }
     const latest = result.state.gameData.lastBattle;
@@ -300,6 +301,11 @@ export function MinuteVanguardApp() {
       </nav>
 
       {battleResult !== null && <BattleResultModal result={battleResult} step={battleStep} jobName={job.displayName} onClose={() => setBattleResult(null)} />}
+      {battleResult === null && state.gameData.pendingOrbReplacementItemId !== null && <OrbReplacementModal state={state} onResolve={(discardItemId) => {
+        const result = resolveOrbReplacement(state, discardItemId);
+        if (!result.accepted) setNotice(result.reason === 'protected-item' ? '装備中・ロック・お気に入りのオーブは入れ替え対象にできません' : 'オーブの入れ替えを完了できません');
+        else commit(result.state, discardItemId === state.gameData.pendingOrbReplacementItemId ? '新しいオーブを見送りました' : 'オーブを入れ替えました');
+      }} />}
       {selectedItem !== undefined && selectedItem.data !== undefined && <ItemModal state={state} itemId={selectedItem.instanceId} data={selectedItem.data} onClose={() => setSelectedItemId(null)} onEquip={() => {
         const result = equipOwnedItem(state, selectedItem.instanceId);
         if (result.accepted) commit(result.state, '装備を変更しました');
@@ -803,6 +809,29 @@ function TitleView(props: Readonly<{ state: MinuteVanguardState; onEquip: (title
     })}</div>
     {visible.length === 0 && <p className="empty-state">条件に合う肩書きがありません。</p>}
   </div>;
+}
+
+function OrbReplacementModal(props: Readonly<{ state: MinuteVanguardState; onResolve: (discardItemId: string) => void }>) {
+  const pendingId = props.state.gameData.pendingOrbReplacementItemId;
+  if (pendingId === null) return null;
+  const pending = props.state.gameData.inventory[pendingId];
+  if (pending?.data?.kind !== 'orb') return null;
+  const currentOrbId = props.state.gameData.loadout.equipped.orb;
+  const candidates = Object.values(props.state.gameData.inventory).filter((item) => item.data?.kind === 'orb' && item.instanceId !== pendingId);
+  return <div className="modal-backdrop"><section className="sheet-modal orb-replacement-modal">
+    <header><h2>オーブがいっぱいです</h2></header>
+    <div className="sheet-content">
+      <p className="modal-description">新しいドロップを受け取るには、手持ちのオーブを1個入れ替えてください。保護中・装備中は選べません。</p>
+      <div className="replacement-new-orb"><span>NEW</span><strong>{pending.data.orbRank} オーブ · 合計 {sumPercent(pending.data)}%</strong><small>{pending.data.effectId ? `${effectLabel(pending.data.effectId)} ${formatEffectValue(pending.data)}` : '特殊効果なし'}</small></div>
+      <button className="replacement-discard-new" onClick={() => props.onResolve(pendingId)}>新しいオーブを捨てる</button>
+      <h3 className="list-heading">入れ替える手持ち</h3>
+      <div className="replacement-orb-list">{candidates.map((item) => {
+        if (item.data?.kind !== 'orb') return null;
+        const protectedItem = item.instanceId === currentOrbId || item.data.favorite === true || item.data.locked === true;
+        return <button key={item.instanceId} disabled={protectedItem} onClick={() => props.onResolve(item.instanceId)}><span>{protectedItem ? '🔒' : '↔'}</span><div><strong>{item.data.orbRank} オーブ · 合計 {sumPercent(item.data)}%</strong><small>{item.data.effectId ? `${effectLabel(item.data.effectId)} ${formatEffectValue(item.data)}` : '特殊効果なし'}{protectedItem ? ' · 保護中' : ''}</small></div></button>;
+      })}</div>
+    </div>
+  </section></div>;
 }
 
 function ItemModal(props: Readonly<{ state: MinuteVanguardState; itemId: string; data: EquipmentData; onClose: () => void; onEquip: () => void; onUpgrade: () => void; onFavorite: () => void; onLock: () => void; onReroll: (lockedStats: readonly StatKey[]) => void; onDiscard: () => void }>) {
