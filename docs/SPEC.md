@@ -148,7 +148,7 @@ A monster becomes capture-eligible after 30 successful defeats. Every later vict
 - active pets add a follow-up attack during monster battles
 - the second Tamer pet contributes at reduced power
 
-Pet training is implemented: snacks auto-charge once per hour until the free-charge threshold of 100, paid snack bundles add 100 for 100 Gem, each snack raises one pet training level, total training levels grant +1% level-up growth per 20 levels, and trained pets increase follow-up damage. Pet gacha remains future product work.
+Pet training is implemented: snacks auto-charge once per hour until the free-charge threshold of 100, paid snack bundles add 100 for 100 Gem, each snack raises one pet training level, total training levels grant +1% level-up growth per 20 levels, and trained pets increase follow-up damage. Pet gacha is also implemented with 50 original limited pets: first single 100 Gem, later singles 300 Gem, ten pulls 3,000 Gem, a shared JST-day pickup at double weight, no ten-pull guarantee, and duplicate conversion into rarity-scaled snacks.
 
 ## Daily missions
 
@@ -162,7 +162,6 @@ Three local-only timed boosts are implemented in Shop. They use simulation time 
 
 - 3 minutes — 30 Gem
 - 10 minutes — 100 Gem
-- 30 minutes — 300 Gem
 - Rush Time — battle cooldown becomes 10 seconds and Gem cooldown skip is disabled
 - EXP Boost — battle EXP ×2
 - Gold Boost — battle Gold ×2

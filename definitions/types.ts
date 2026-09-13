@@ -190,10 +190,12 @@ export type MinuteVanguardGameData = Readonly<{
   permanentUpgrades: PermanentUpgradeState;
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];
+  ownedGachaPetIds: readonly string[];
   activePetEnemyIds: readonly string[];
   petTraining: Readonly<Record<string, PetTrainingState>>;
   petSnacks: number;
   petSnackRemainderSec: number;
+  petGachaSingleDiscountUsed: boolean;
   orbCapacity: number;
   timeBoosts: TimeBoostState;
   titles: ProgressiveTitleCollectionState;

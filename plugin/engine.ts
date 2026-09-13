@@ -57,6 +57,7 @@ import {
   titleRules,
   type TitleEffectFamily,
 } from '../definitions/title-definitions';
+import { duplicateSnackRewardByRarity, gachaPetDefinitions } from '../definitions/gacha-pet-definitions';
 import type {
   BattleResult,
   BattleTurn,
@@ -85,7 +86,6 @@ const BASE_STATS: StatValues = { hp: 100, attack: 12, defense: 8, magicAttack: 1
 const TIME_BOOST_OPTIONS = [
   { durationSec: 180, gemCost: 30 },
   { durationSec: 600, gemCost: 100 },
-  { durationSec: 1800, gemCost: 300 },
 ] as const;
 const PET_SNACK_AUTO_INTERVAL_SEC = 60 * 60;
 const PET_SNACK_AUTO_CAP = 100;
@@ -221,10 +221,12 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       },
       freeCooldownSkipUsage: { dayKey: jstDayKey(nowMs), used: 0 },
       ownedPetEnemyIds: [],
+      ownedGachaPetIds: [],
       activePetEnemyIds: [],
       petTraining: {},
       petSnacks: 0,
       petSnackRemainderSec: 0,
+      petGachaSingleDiscountUsed: false,
       orbCapacity: ORB_BASE_CAPACITY,
       timeBoosts: { rush: 0, exp: 0, gold: 0 },
       titles: createProgressiveTitleCollection(),
@@ -251,9 +253,12 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
-        petTraining: state.gameData.petTraining ?? Object.fromEntries((state.gameData.ownedPetEnemyIds ?? []).map((id) => [id, { trainingLevel: 0, nickname: null }])),
+        ownedGachaPetIds: state.gameData.ownedGachaPetIds ?? [],
+        player: { ...state.gameData.player, petCount: (state.gameData.ownedPetEnemyIds ?? []).length + (state.gameData.ownedGachaPetIds ?? []).length },
+        petTraining: state.gameData.petTraining ?? Object.fromEntries([...(state.gameData.ownedPetEnemyIds ?? []), ...(state.gameData.ownedGachaPetIds ?? [])].map((id) => [id, { trainingLevel: 0, nickname: null }])),
         petSnacks: state.gameData.petSnacks ?? 0,
         petSnackRemainderSec: state.gameData.petSnackRemainderSec ?? 0,
+        petGachaSingleDiscountUsed: state.gameData.petGachaSingleDiscountUsed ?? false,
         permanentUpgrades: { ...state.gameData.permanentUpgrades, freeCooldownSkips: state.gameData.permanentUpgrades.freeCooldownSkips ?? false },
         freeCooldownSkipUsage: state.gameData.freeCooldownSkipUsage ?? { dayKey: jstDayKey(nowMs), used: 0 },
       },
@@ -326,7 +331,7 @@ export function effectiveBattleCooldownSec(state: MinuteVanguardState): number {
 export function purchaseTimeBoost(
   state: MinuteVanguardState,
   kind: TimeBoostKind,
-  durationSec: 180 | 600 | 1800,
+  durationSec: 180 | 600,
 ): CommandResult<MinuteVanguardState, 'unknown-duration' | 'already-active' | 'insufficient-gems' | 'beginner-fast-cooldown'> {
   const option = TIME_BOOST_OPTIONS.find((candidate) => candidate.durationSec === durationSec);
   if (option === undefined) return reject(state, 'unknown-duration');
@@ -458,6 +463,26 @@ export function ninjaExecuteChance(luck: number, twentyTurnCoverage = 1): number
   return baseChance * ((twentyTurnCoverage - 0.5) / 0.5);
 }
 
+export function ownedPetIds(state: MinuteVanguardState): readonly string[] {
+  return [...state.gameData.ownedPetEnemyIds, ...state.gameData.ownedGachaPetIds];
+}
+
+export function petCatalogEntry(petId: string): Readonly<{ id: string; displayName: string; glyph: string; rarity: MonsterRarity; attackType: 'physical' | 'magic'; source: 'capture' | 'gacha' }> | null {
+  const enemy = enemies.find((candidate) => candidate.id === petId);
+  if (enemy !== undefined) return { id: enemy.id, displayName: enemy.displayName, glyph: enemy.glyph, rarity: enemy.rarity, attackType: enemy.attackType, source: 'capture' };
+  const gacha = gachaPetDefinitions.find((candidate) => candidate.id === petId);
+  return gacha === undefined ? null : { ...gacha, source: 'gacha' };
+}
+
+export function dailyPetPickupId(state: MinuteVanguardState): string {
+  const dayKey = jstDayKey(state.lastWallClockMs);
+  return gachaPetDefinitions[hashString(`${dayKey}:pet-pickup`) % gachaPetDefinitions.length]!.id;
+}
+
+export function petGachaSingleCost(state: MinuteVanguardState): number {
+  return state.gameData.petGachaSingleDiscountUsed ? 300 : 100;
+}
+
 export function totalPetTrainingLevels(state: MinuteVanguardState): number {
   return Object.values(state.gameData.petTraining).reduce((sum, training) => sum + training.trainingLevel, 0);
 }
@@ -467,13 +492,13 @@ export function petTrainingGrowthBonusPct(state: MinuteVanguardState): number {
 }
 
 export function levelGrowthMultiplier(state: MinuteVanguardState): number {
-  const ownedPetBonusPct = state.gameData.ownedPetEnemyIds.length;
+  const ownedPetBonusPct = ownedPetIds(state).length;
   return 1 + (state.gameData.player.growthBonusPct + ownedPetBonusPct + petTrainingGrowthBonusPct(state)) / 100;
 }
 
 export function petTrainingCap(enemyId: string): number | null {
-  const enemy = enemies.find((candidate) => candidate.id === enemyId);
-  return enemy === undefined ? null : PET_TRAINING_CAP_BY_RARITY[enemy.rarity];
+  const pet = petCatalogEntry(enemyId);
+  return pet === null ? null : PET_TRAINING_CAP_BY_RARITY[pet.rarity];
 }
 
 export function petTrainingLevel(state: MinuteVanguardState, enemyId: string): number {
@@ -489,7 +514,7 @@ export function trainPet(
   state: MinuteVanguardState,
   enemyId: string,
 ): CommandResult<MinuteVanguardState, 'unknown-pet' | 'no-snacks' | 'max-training'> {
-  if (!state.gameData.ownedPetEnemyIds.includes(enemyId)) return reject(state, 'unknown-pet');
+  if (!ownedPetIds(state).includes(enemyId)) return reject(state, 'unknown-pet');
   const cap = petTrainingCap(enemyId);
   if (cap === null) return reject(state, 'unknown-pet');
   const current = state.gameData.petTraining[enemyId] ?? { trainingLevel: 0, nickname: null };
@@ -521,6 +546,64 @@ export function buyPetSnacks(
     },
   };
   return accept(nextState, [event(nextState, 'petSnacksPurchased', `${nextState.gameData.petSnacks}`, { cost: PET_SNACK_BUNDLE_COST })]);
+}
+
+export function drawPetGacha(
+  state: MinuteVanguardState,
+  count: 1 | 10,
+): CommandResult<MinuteVanguardState, 'insufficient-gems'> {
+  const cost = count === 1 ? petGachaSingleCost(state) : 3_000;
+  const spend = spendCurrency(state, ids.currency.gem, cost, `pet.gacha.${count}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  let nextState = spend.state;
+  let newCount = 0;
+  let duplicateSnacks = 0;
+
+  for (let index = 0; index < count; index += 1) {
+    const rarityRoll = draw(nextState, ids.rng.loot);
+    nextState = rarityRoll.state;
+    const rarity = rollNormalRarity(rarityRoll.value, false);
+    const candidates = gachaPetDefinitions.filter((candidate) => candidate.rarity === rarity);
+    const pickupId = dailyPetPickupId(nextState);
+    const pickup = candidates.find((candidate) => candidate.id === pickupId);
+    const pickRoll = draw(nextState, ids.rng.loot);
+    nextState = pickRoll.state;
+    const weightedCount = candidates.length + (pickup === undefined ? 0 : 1);
+    const weightedIndex = Math.min(weightedCount - 1, Math.floor(pickRoll.value * weightedCount));
+    const chosen = weightedIndex < candidates.length ? candidates[weightedIndex] : pickup;
+    if (chosen === undefined) continue;
+
+    if (nextState.gameData.ownedGachaPetIds.includes(chosen.id)) {
+      const reward = duplicateSnackRewardByRarity[chosen.rarity];
+      duplicateSnacks += reward;
+      nextState = { ...nextState, gameData: { ...nextState.gameData, petSnacks: nextState.gameData.petSnacks + reward } };
+      continue;
+    }
+
+    const ownedGachaPetIds = [...nextState.gameData.ownedGachaPetIds, chosen.id];
+    newCount += 1;
+    nextState = {
+      ...nextState,
+      gameData: {
+        ...nextState.gameData,
+        ownedGachaPetIds,
+        petTraining: {
+          ...nextState.gameData.petTraining,
+          [chosen.id]: nextState.gameData.petTraining[chosen.id] ?? { trainingLevel: 0, nickname: null },
+        },
+        player: {
+          ...nextState.gameData.player,
+          petCount: nextState.gameData.ownedPetEnemyIds.length + ownedGachaPetIds.length,
+        },
+      },
+    };
+  }
+
+  if (count === 1 && !nextState.gameData.petGachaSingleDiscountUsed) {
+    nextState = { ...nextState, gameData: { ...nextState.gameData, petGachaSingleDiscountUsed: true } };
+  }
+
+  return accept(nextState, [event(nextState, 'petGachaResolved', `${state.gameData.totalBattles}:${count}`, { count, cost, newCount, duplicateSnacks, pickupId: dailyPetPickupId(state) })]);
 }
 
 export function availableJobs(state: MinuteVanguardState): readonly JobDefinition[] {
@@ -606,18 +689,18 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
     let petDamage = 0;
     if (enemyHp > 0 && nextState.gameData.activePetEnemyIds.length > 0) {
       const petTitleMultiplier = Math.max(1, titleEffectValue(nextState, 'petDamage'));
-      for (const [petIndex, petEnemyId] of nextState.gameData.activePetEnemyIds.entries()) {
-        const petEnemy = enemies.find((candidate) => candidate.id === petEnemyId);
-        if (petEnemy === undefined) continue;
-        const sourcePower = petEnemy.attackType === 'magic' ? stats.magicAttack : stats.attack;
-        const trainingLevel = petTrainingLevel(nextState, petEnemyId);
+      for (const [petIndex, petId] of nextState.gameData.activePetEnemyIds.entries()) {
+        const pet = petCatalogEntry(petId);
+        if (pet === null) continue;
+        const sourcePower = pet.attackType === 'magic' ? stats.magicAttack : stats.attack;
+        const trainingLevel = petTrainingLevel(nextState, petId);
         const trainingMultiplier = 1 + trainingLevel * 0.02;
         const tamerMultiplier = job.id === 'job.tamer' ? 1.4 : 1;
         const secondPetMultiplier = petIndex === 0 ? 1 : 0.6;
         const hit = Math.max(1, Math.round(sourcePower * 0.25 * trainingMultiplier * tamerMultiplier * petTitleMultiplier * secondPetMultiplier));
         petDamage += hit;
         enemyHp = Math.max(0, enemyHp - hit);
-        logs.push(`${petEnemy.displayName}の追撃！ ${hit} ダメージ！`);
+        logs.push(`${pet.displayName}の追撃！ ${hit} ダメージ！`);
         if (enemyHp <= 0) break;
       }
     }
@@ -785,7 +868,7 @@ export function fight(state: MinuteVanguardState): CommandResult<MinuteVanguardS
               ...nextState.gameData.petTraining,
               [enemy.id]: nextState.gameData.petTraining[enemy.id] ?? { trainingLevel: 0, nickname: null },
             },
-            player: { ...nextState.gameData.player, petCount: ownedPetEnemyIds.length },
+            player: { ...nextState.gameData.player, petCount: ownedPetEnemyIds.length + nextState.gameData.ownedGachaPetIds.length },
           },
         };
       }
@@ -1497,7 +1580,7 @@ export function setActivePet(
   enemyId: string,
   active: boolean,
 ): CommandResult<MinuteVanguardState, 'pet-not-owned' | 'party-full'> {
-  if (!state.gameData.ownedPetEnemyIds.includes(enemyId)) return reject(state, 'pet-not-owned');
+  if (!ownedPetIds(state).includes(enemyId)) return reject(state, 'pet-not-owned');
   const current = state.gameData.activePetEnemyIds;
   const alreadyActive = current.includes(enemyId);
   if (active === alreadyActive) return accept(state, []);
