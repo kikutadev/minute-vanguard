@@ -219,6 +219,20 @@ export class MinuteVanguardOnlineClient {
     return { arena: parseArenaPlayer(payload.arena), battle: parseArenaBattle(payload.battle) };
   }
 
+  async challengeArenaPlayer(defenderId: string): Promise<Readonly<{ arena: ArenaPlayerView; battle: ArenaBattleResult }>> {
+    const identity = this.#readIdentity();
+    if (identity === null) throw new PublicProfileOnlineError(401, 'arena-identity-missing', null);
+    const response = await this.#fetcher(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/players/${encodeURIComponent(identity.playerId)}/arena/battles/challenge`), {
+      method: 'POST',
+      headers: { authorization: `Bearer ${identity.writeToken}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ defenderId }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) throw responseErrorFromPayload(response.status, payload);
+    if (!isRecord(payload) || !('arena' in payload) || !('battle' in payload)) throw new PublicProfileOnlineError(502, 'invalid-arena-battle-envelope', payload);
+    return { arena: parseArenaPlayer(payload.arena), battle: parseArenaBattle(payload.battle) };
+  }
+
   async listArenaLeaderboard(limit = 10): Promise<readonly ArenaLeaderboardEntry[]> {
     const url = new URL(this.#url(`/v1/games/${MINUTE_VANGUARD_GAME_ID}/arena/leaderboard`));
     url.searchParams.set('limit', String(limit));
@@ -336,7 +350,7 @@ function parseArenaPlayer(value: unknown): ArenaPlayerView {
 }
 
 function parseArenaBattle(value: unknown): ArenaBattleResult {
-  if (!isRecord(value) || typeof value.battleId !== 'string' || !Number.isFinite(value.resolvedAtMs) || typeof value.outcome !== 'string'
+  if (!isRecord(value) || typeof value.battleId !== 'string' || (value.matchType !== 'random' && value.matchType !== 'challenge') || !Number.isFinite(value.resolvedAtMs) || typeof value.outcome !== 'string'
     || !Array.isArray(value.turns) || !isRecord(value.opponent) || !isArenaLoadout(value.opponent.loadout) || !isArenaPetLoadout(value.opponent.pets) || !Number.isFinite(value.ratingAfter) || !Number.isFinite(value.seasonScoreAfter)) {
     throw new PublicProfileOnlineError(502, 'invalid-arena-battle', value);
   }
@@ -352,7 +366,7 @@ function parseArenaLeaderboardEntry(value: unknown): ArenaLeaderboardEntry {
 }
 
 function parseArenaHistoryEntry(value: unknown): ArenaHistoryEntry {
-  if (!isRecord(value) || typeof value.battleId !== 'string' || !Number.isFinite(value.resolvedAtMs) || typeof value.role !== 'string'
+  if (!isRecord(value) || typeof value.battleId !== 'string' || (value.matchType !== 'random' && value.matchType !== 'challenge') || !Number.isFinite(value.resolvedAtMs) || typeof value.role !== 'string'
     || typeof value.opponentName !== 'string' || typeof value.opponentJobId !== 'string' || typeof value.outcome !== 'string') {
     throw new PublicProfileOnlineError(502, 'invalid-arena-history-entry', value);
   }

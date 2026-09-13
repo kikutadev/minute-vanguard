@@ -49,8 +49,11 @@ export type ArenaBattleOpponent = Readonly<{
   pets: ArenaPetLoadout;
 }>;
 
+export type ArenaMatchType = 'random' | 'challenge';
+
 export type ArenaBattleResult = Readonly<{
   battleId: string;
+  matchType: ArenaMatchType;
   combatVersion: number;
   resolvedAtMs: number;
   seed: number;
@@ -73,6 +76,7 @@ export type ArenaBattleResult = Readonly<{
 
 export type ArenaHistoryEntry = Readonly<{
   battleId: string;
+  matchType: ArenaMatchType;
   resolvedAtMs: number;
   role: 'attack' | 'defense';
   opponentName: string;

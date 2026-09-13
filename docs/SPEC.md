@@ -82,7 +82,7 @@ Competitive integrity takes priority over importing local progression. The Worke
 
 If there is no eligible human opponent, the server selects an original training bot near the player's Rating. Training battles still consume the Arena cooldown but change no official Rating, Season Score or W/L.
 
-Arena-specific Weapon / Armor / Orb selection is now server-owned, free, and shared by attack and defense. Current Arena parity gaps are random-match Gold transfer, named challenges, season reward delivery and hall-of-fame persistence. Those remain server-owned work; local save values are not trusted for competitive outcomes.
+Arena-specific Weapon / Armor / Orb selection is now server-owned, free, and shared by attack and defense. Current Arena parity gaps are random-match Gold transfer, season reward delivery and hall-of-fame persistence. Those remain server-owned work; local save values are not trusted for competitive outcomes.
 
 ## Stats and growth
 
@@ -234,9 +234,9 @@ Schema upgrades normalize incompatible public-prototype saves into the current p
 
 The independent Pages build remains local-first. Opt-in public profiles and their reference rankings are live through Cloudflare Worker + D1, and weekly Arena/Champion now has its own server-authoritative state and normalized combat path. Public-profile values never feed Arena authority.
 
-Still online-only and not implemented: random-match Gold transfer, named Arena challenges, season reward delivery/hall of fame, shared Raid, shared wanted events, chat, account/payment and other server rewards.
+Still online-only and not implemented: random-match Gold transfer, season reward delivery/hall of fame, shared Raid, shared wanted events, chat, account/payment and other server rewards.
 
-Arena uses server-owned normalized combat plus a free server-owned Weapon / Armor / Orb loadout and normalized physical/magic Arena pets persisted in D1 and applied on both attack and defense. Local save level, Gold, regular equipment, normal pet training and RNG do not affect competitive results. Concrete Arena gear values and the base Arena pet rate are product-owned where the public reference does not expose exact numbers.
+Arena uses server-owned normalized combat plus a free server-owned Weapon / Armor / Orb loadout and normalized physical/magic Arena pets persisted in D1 and applied on both attack and defense. Ranking challenges use the same authoritative combat/rating path, keep the normal cooldown/barrier/daily-win constraints, and intentionally transfer no Gold. Local save level, Gold, regular equipment, normal pet training and RNG do not affect competitive results. Concrete Arena gear values and the base Arena pet rate are product-owned where the public reference does not expose exact numbers.
 
 ## Deployment
 

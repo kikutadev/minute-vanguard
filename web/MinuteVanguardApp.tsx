@@ -724,7 +724,7 @@ function ArenaView({ state }: Readonly<{ state: MinuteVanguardState }>) {
 
     <h3 className="arena-heading">直近のArenaログ</h3>
     <div className="arena-history">{history.length === 0 ? <p>対戦するとここに履歴が残ります。</p> : history.map((entry) => <div key={entry.battleId} className={entry.outcome}>
-      <span>{entry.role === 'attack' ? '攻' : '守'}</span><strong>{entry.opponentName}<small>{jobDisplayName(entry.opponentJobId)}</small></strong><b>{entry.outcome === 'win' ? '勝' : entry.outcome === 'loss' ? '敗' : '分'}</b><em>{entry.ratingDelta >= 0 ? '+' : ''}{entry.ratingDelta}R / +{entry.scoreGain}pt</em>
+      <span>{entry.role === 'attack' ? '攻' : '守'}{entry.matchType === 'challenge' ? '指' : ''}</span><strong>{entry.opponentName}<small>{jobDisplayName(entry.opponentJobId)}</small></strong><b>{entry.outcome === 'win' ? '勝' : entry.outcome === 'loss' ? '敗' : '分'}</b><em>{entry.ratingDelta >= 0 ? '+' : ''}{entry.ratingDelta}R / +{entry.scoreGain}pt</em>
     </div>)}</div>
 
     <button className="arena-leave" disabled={busy} onClick={() => void leave()}>アリーナ登録を削除</button>
@@ -740,9 +740,10 @@ function ArenaBattleModal({ result, onClose }: Readonly<{ result: ArenaBattleRes
       <b>VS</b>
       <div><span>{result.opponent.isBot ? '🤖' : '🧑‍🚀'}</span><strong>{result.opponent.displayName}</strong><em>{result.defenderHpAfter}/{result.defenderMaxHp} HP</em></div>
     </div>
-    <div className="turn-log arena-turn-log"><div className="turn-log-title">SERVER BATTLE LOG <span>v{result.combatVersion}</span></div>{logs.slice(-12).map((log) => <p key={log.key}><b>T{log.turn}</b>{log.line}</p>)}</div>
+    <div className="turn-log arena-turn-log"><div className="turn-log-title">SERVER BATTLE LOG <span>v{result.combatVersion} · {result.matchType === 'challenge' ? 'CHALLENGE' : 'RANDOM'}</span></div>{logs.slice(-12).map((log) => <p key={log.key}><b>T{log.turn}</b>{log.line}</p>)}</div>
     <div className={`battle-reward-panel ${result.outcome === 'win' ? 'victory' : result.outcome === 'loss' ? 'defeat' : 'draw'}`}>
       <h2>{result.outcome === 'win' ? 'ARENA WIN' : result.outcome === 'loss' ? 'ARENA LOSS' : 'ARENA DRAW'}</h2>
+      {result.matchType === 'challenge' && <p className="arena-challenge-note">指名対戦 · Gold移動なし</p>}
       {result.opponent.isBot ? <p className="arena-training-note">訓練相手のためRate・Season Scoreは変動しません</p> : <div className="reward-row"><span>RATE {result.ratingDelta >= 0 ? '+' : ''}{result.ratingDelta}</span><span>SEASON +{result.seasonScoreGain}</span><span>{result.weekendMultiplier === 2 ? 'WEEKEND ×2' : 'WEEKDAY'}</span></div>}
       <p>{result.opponent.isBot ? 'TRAINING' : `Rate ${result.ratingBefore} → ${result.ratingAfter}`} · Score {result.seasonScoreAfter}</p>
       <button className="modal-primary" onClick={onClose}>閉じる</button>
@@ -982,6 +983,10 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
   const [remoteStatus, setRemoteStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [remotePlayers, setRemotePlayers] = useState<readonly PublicPlayerSnapshot<MinuteVanguardPublicData>[]>([]);
   const [arenaEntries, setArenaEntries] = useState<readonly ArenaLeaderboardEntry[]>([]);
+  const [arenaMe, setArenaMe] = useState<ArenaPlayerView | null>(null);
+  const [arenaBattle, setArenaBattle] = useState<ArenaBattleResult | null>(null);
+  const [challengeBusyId, setChallengeBusyId] = useState<string | null>(null);
+  const [arenaActionError, setArenaActionError] = useState<string | null>(null);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [publishingEnabled, setPublishingEnabled] = useState(() => getMinuteVanguardOnlineClient().isPublishingEnabled());
   const [publishBusy, setPublishBusy] = useState(false);
@@ -992,16 +997,18 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
     let cancelled = false;
     const online = getMinuteVanguardOnlineClient();
     if (rankingTab === 'arena') {
-      void online.listArenaLeaderboard(20)
-        .then((entries) => {
+      void Promise.all([online.listArenaLeaderboard(20), online.getArena()])
+        .then(([entries, me]) => {
           if (cancelled) return;
           setArenaEntries(entries);
+          setArenaMe(me);
           setRemotePlayers([]);
           setRemoteStatus('ready');
         })
         .catch(() => {
           if (cancelled) return;
           setArenaEntries([]);
+          setArenaMe(null);
           setRemoteStatus('error');
         });
       return () => { cancelled = true; };
@@ -1052,6 +1059,30 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
       setPublishBusy(false);
     }
   };
+  const arenaCooldownSec = arenaMe === null ? 0 : Math.min(60, Math.max(0, Math.ceil((arenaMe.nextAttackAtMs - state.lastWallClockMs) / 1_000)));
+  const challengeArena = async (defenderId: string) => {
+    if (arenaMe === null || challengeBusyId !== null || defenderId === arenaMe.playerId) return;
+    setChallengeBusyId(defenderId);
+    setArenaActionError(null);
+    try {
+      const online = getMinuteVanguardOnlineClient();
+      const result = await online.challengeArenaPlayer(defenderId);
+      setArenaMe(result.arena);
+      setArenaBattle(result.battle);
+      setArenaEntries(await online.listArenaLeaderboard(20));
+    } catch (caught) {
+      const code = caught instanceof Error && 'code' in caught ? String((caught as { code?: unknown }).code) : '';
+      const message = code === 'arena-cooldown' ? 'まだアリーナの待ち時間です'
+        : code === 'arena-target-barrier' ? '相手は防衛バリア中です'
+          : code === 'arena-daily-win-limit' ? 'この相手には今日は3勝しています'
+            : code === 'arena-target-not-found' ? '相手のArena登録が見つかりません'
+              : '指名対戦を開始できませんでした';
+      setArenaActionError(message);
+      try { setArenaMe(await getMinuteVanguardOnlineClient().getArena()); } catch { /* keep actionable error */ }
+    } finally {
+      setChallengeBusyId(null);
+    }
+  };
   const rankLabel = (index: number) => rankingTab === 'recent' ? '•' : `${index + 1}`;
   const selectRankingTab = (next: RankingTab) => {
     if (next === rankingTab) return;
@@ -1075,9 +1106,17 @@ function RankingView({ state, onPublishingChanged }: Readonly<{ state: MinuteVan
       {remoteStatus === 'loading' && <p className="offline-label">Arena順位を読み込んでいます…</p>}
       {remoteStatus === 'error' && <p className="offline-label error">Arena順位を取得できません。ソロプレイには影響しません。</p>}
       {remoteStatus === 'ready' && arenaEntries.length === 0 && <p className="empty-state">今シーズンのArena参加者はまだいません。</p>}
-      <div className="ranking-list arena-ranking-list">{arenaEntries.map((entry) => <div className="rank-row arena-rank-row" key={entry.playerId}>
-        <b>{entry.isChampion ? '♛' : entry.rank}</b><span>🧑‍🚀</span><strong>{entry.displayName}<small>{jobDisplayName(entry.jobId)} · Rate {entry.rating.toLocaleString()}</small></strong><em>{entry.seasonScore.toLocaleString()} pt</em>
-      </div>)}</div>
+      {arenaActionError && <p className="arena-error ranking-arena-error">{arenaActionError}</p>}
+      <div className="ranking-list arena-ranking-list">{arenaEntries.map((entry) => {
+        const isYou = arenaMe?.playerId === entry.playerId;
+        const label = arenaMe === null ? '参加後に挑戦' : arenaCooldownSec > 0 ? `${arenaCooldownSec}秒` : challengeBusyId === entry.playerId ? '対戦中…' : '挑戦';
+        return <div className={`rank-row arena-rank-row ${isYou ? 'you' : ''}`} key={entry.playerId}>
+          <b>{entry.isChampion ? '♛' : entry.rank}</b><span>🧑‍🚀</span><strong>{entry.displayName}<small>{jobDisplayName(entry.jobId)} · Rate {entry.rating.toLocaleString()}</small></strong><em>{entry.seasonScore.toLocaleString()} pt</em>
+          {isYou ? <i>YOU</i> : <button disabled={arenaMe === null || arenaCooldownSec > 0 || challengeBusyId !== null} onClick={() => void challengeArena(entry.playerId)}>{label}</button>}
+        </div>;
+      })}</div>
+      {arenaMe === null && remoteStatus === 'ready' && <p className="ranking-arena-hint">バトル → アリーナで参加するとランキングから指名対戦できます。</p>}
+      {arenaBattle !== null && <ArenaBattleModal result={arenaBattle} onClose={() => setArenaBattle(null)} />}
     </> : <>
       <div className="self-public-card">
         <span>あなた</span><strong>{state.gameData.player.name}</strong><em>Lv.{own.level} · {jobDisplayName(own.jobId)}</em>

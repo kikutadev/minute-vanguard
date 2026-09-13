@@ -42,6 +42,7 @@ export const hero60Reference = {
   arena: {
     dedicatedLoadout: { slots: ['weapon', 'armor', 'orb'] as const, free: true, appliesToAttackAndDefense: true, exactValuesPublic: false },
     pets: { everyTurn: true, tamerSecondPet: true, tamerSecondMultiplier: 0.6, tamerBonusPoints: 40, ninjaDodge: 0.30, wraithDodge: 0.70, exactBaseRatePublic: false },
+    namedChallenge: { fromRanking: true, goldTransfer: false, sharesRatingRecordBarrierAndDailyWinLimit: true },
     weeklyResetWeekdayJst: 'monday',
     weeklyResetHourJst: 0,
     initialRating: 1000,

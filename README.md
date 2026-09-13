@@ -41,6 +41,7 @@ Implemented in the current build:
 - opt-in Cloudflare Worker + D1 public profiles and non-authoritative reference leaderboards
 - server-authoritative weekly Arena: normalized server combat, Rating, Season Score, Champion crown, fixed PvP cooldown, defense barrier and battle history
 - server-owned Arena loadout and normalized Arena pets, shared by attack and defense without trusting local progression values
+- ranking-targeted Arena challenges with normal Rate/barrier/daily-win rules and no Gold transfer
 - free server-owned Arena weapon / armor / orb loadouts used for both attack and defense; concrete balance remains Minute Vanguard-owned because the public reference does not expose the full stat table
 
 ## Kit boundary

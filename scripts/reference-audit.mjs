@@ -26,6 +26,8 @@ const checks = [
   ['patchnotes', 'arena.dedicatedLoadout', ['アリーナ専用の武器・防具・オーブ', '攻めるときも攻められたときもこの装備', '無料']],
   ['guide', 'arena.petParticipation', ['モンスター戦・アリーナの両方で毎ターン一緒に攻撃', 'テイマーなら2体', '2体目の攻撃力は6割', 'ペットの攻撃力+40%']],
   ['patchnotes', 'arena.petDodge', ['ペットの攻撃も相手の回避で外れる', '忍者30%・幽鬼70%']],
+  ['guide', 'arena.namedChallenge', ['ランキングから指名して戦い', 'ランキングから指名した対戦ではゴールドは一切動かない']],
+  ['patchnotes', 'arena.namedChallengeRules', ['ランキングから相手を指名して戦った場合', 'ゴールドは1Gも動きません', 'PvPポイント・戦績・防衛バリア・1日3勝の制限']],
   ['guide', 'goldBags.core', ['小銭袋', '30', 'ずだ袋', '100', '大金庫', '300', '直近10戦', '2回以上']],
   ['guide', 'progression.jobCurrent', ['301回目 Lv.210', '1〜200回目 +5%', '201〜300回目 +4%', '301回目以降はずっと +3%', '全装備を外して戦う', '杖を持つと自分の攻撃も魔法になる']],
   ['patchnotes', 'progression.ninjaCurrent', ['最大15%', '通常戦闘（最大20ターン）で倒しきれるか']],

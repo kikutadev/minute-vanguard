@@ -131,6 +131,9 @@ describe('public reference parity locks', () => {
     expect(arenaPetAttackRate('job.tamer', 1)).toBeCloseTo((0.25 + hero60Reference.arena.pets.tamerBonusPoints / 100) * hero60Reference.arena.pets.tamerSecondMultiplier);
     expect(arenaDodgeChance('job.ninja', 0)).toBeCloseTo(hero60Reference.arena.pets.ninjaDodge);
     expect(arenaDodgeChance('job.wraith', 0)).toBeCloseTo(hero60Reference.arena.pets.wraithDodge);
+    expect(hero60Reference.arena.namedChallenge.fromRanking).toBe(true);
+    expect(hero60Reference.arena.namedChallenge.goldTransfer).toBe(false);
+    expect(hero60Reference.arena.namedChallenge.sharesRatingRecordBarrierAndDailyWinLimit).toBe(true);
   });
 });
 

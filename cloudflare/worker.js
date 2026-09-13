@@ -97,6 +97,8 @@ function arenaRoute(pathname) {
   if (history) return { kind: 'arena-history', gameId: decodeURIComponent(history[1]), playerId: decodeURIComponent(history[2]) };
   const randomBattle = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/battles\/random$/u);
   if (randomBattle) return { kind: 'arena-random-battle', gameId: decodeURIComponent(randomBattle[1]), playerId: decodeURIComponent(randomBattle[2]) };
+  const challengeBattle = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/battles\/challenge$/u);
+  if (challengeBattle) return { kind: 'arena-challenge-battle', gameId: decodeURIComponent(challengeBattle[1]), playerId: decodeURIComponent(challengeBattle[2]) };
   const barrier = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/barrier$/u);
   if (barrier) return { kind: 'arena-barrier', gameId: decodeURIComponent(barrier[1]), playerId: decodeURIComponent(barrier[2]) };
   const loadout = pathname.match(/^\/v1\/games\/([^/]+)\/players\/([^/]+)\/arena\/loadout$/u);
@@ -491,7 +493,7 @@ async function handleArenaHistory(request, env, gameId, playerId) {
     const attackerOutcome = row.attacker_outcome;
     const outcome = attack ? attackerOutcome : attackerOutcome === 'win' ? 'loss' : attackerOutcome === 'loss' ? 'win' : 'draw';
     return {
-      battleId: row.battle_id, resolvedAtMs: Number(row.resolved_at_ms), role: attack ? 'attack' : 'defense',
+      battleId: row.battle_id, matchType: row.match_type ?? 'random', resolvedAtMs: Number(row.resolved_at_ms), role: attack ? 'attack' : 'defense',
       opponentName: attack ? row.defender_name : row.attacker_name,
       opponentJobId: attack ? row.defender_job_id : row.attacker_job_id,
       outcome,
@@ -517,11 +519,24 @@ async function humanArenaOpponent(db, attacker, nowMs, dayKey) {
   return candidates[randomUint32() % candidates.length];
 }
 
+async function challengedArenaOpponent(db, attacker, defenderId, nowMs, dayKey) {
+  if (defenderId === attacker.player_id) return { error: 'arena-self-challenge', status: 400 };
+  let opponent = await getArenaRow(db, attacker.game_id, defenderId);
+  if (opponent === null) return { error: 'arena-target-not-found', status: 404 };
+  opponent = await normalizeArenaSeason(db, opponent, nowMs);
+  if (Number(opponent.barrier_until_ms) > nowMs) return { error: 'arena-target-barrier', status: 409 };
+  const wins = await db.prepare(`
+    SELECT win_count FROM arena_daily_wins WHERE game_id = ? AND day_key = ? AND attacker_id = ? AND defender_id = ?
+  `).bind(attacker.game_id, dayKey, attacker.player_id, defenderId).first();
+  if (Number(wins?.win_count ?? 0) >= ARENA_DAILY_WIN_LIMIT) return { error: 'arena-daily-win-limit', status: 409 };
+  return { opponent };
+}
+
 function botArenaOpponent(attackerRating) {
   return [...ARENA_BOTS].sort((a, b) => Math.abs(a.rating - attackerRating) - Math.abs(b.rating - attackerRating))[0];
 }
 
-async function handleArenaRandomBattle(request, env, gameId, playerId) {
+async function handleArenaBattle(request, env, gameId, playerId, matchType, challengedDefenderId = null) {
   if (gameId !== GAME_ID) return json(request, { error: 'unknown-game' }, { status: 404 });
   const auth = await authenticateOwner(request, env.PUBLIC_PLAYER_DB, gameId, playerId);
   if (!auth.ok) return json(request, { error: auth.error }, { status: auth.status });
@@ -533,6 +548,14 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
     return json(request, { error: 'arena-cooldown', retryAfterMs: Number(attacker.next_attack_at_ms) - nowMs }, { status: 429 });
   }
 
+  const dayKey = arenaJstDayKey(nowMs);
+  let human = null;
+  if (matchType === 'challenge') {
+    const challenge = await challengedArenaOpponent(env.PUBLIC_PLAYER_DB, attacker, challengedDefenderId, nowMs, dayKey);
+    if ('error' in challenge) return json(request, { error: challenge.error }, { status: challenge.status });
+    human = challenge.opponent;
+  }
+
   const nextAttackAtMs = nowMs + ARENA_COOLDOWN_MS;
   const reserve = await env.PUBLIC_PLAYER_DB.prepare(`
     UPDATE arena_players SET next_attack_at_ms = ?, updated_at_ms = ?
@@ -542,10 +565,9 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
     return json(request, { error: 'arena-cooldown', retryAfterMs: ARENA_COOLDOWN_MS }, { status: 429 });
   }
 
-  const dayKey = arenaJstDayKey(nowMs);
-  const human = await humanArenaOpponent(env.PUBLIC_PLAYER_DB, attacker, nowMs, dayKey);
+  if (matchType === 'random') human = await humanArenaOpponent(env.PUBLIC_PLAYER_DB, attacker, nowMs, dayKey);
   const opponent = human ?? botArenaOpponent(Number(attacker.rating));
-  const isBot = human === null;
+  const isBot = matchType === 'random' && human === null;
   const defenderId = isBot ? opponent.playerId : opponent.player_id;
   const defenderName = isBot ? opponent.displayName : opponent.display_name;
   const defenderJobId = isBot ? opponent.jobId : opponent.job_id;
@@ -602,19 +624,19 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
   statements.push(env.PUBLIC_PLAYER_DB.prepare(`
     INSERT INTO arena_battles (
       game_id, battle_id, season_key, resolved_at_ms, attacker_id, attacker_name, attacker_job_id,
-      defender_id, defender_name, defender_job_id, defender_is_bot, attacker_outcome,
+      defender_id, defender_name, defender_job_id, defender_is_bot, attacker_outcome, match_type,
       attacker_rating_delta, defender_rating_delta, attacker_score_gain, defender_score_gain,
       combat_version, seed, result_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).bind(gameId, battleId, attacker.season_key, nowMs, playerId, attacker.display_name, attacker.job_id,
-    defenderId, defenderName, defenderJobId, isBot ? 1 : 0, simulation.outcome,
+    defenderId, defenderName, defenderJobId, isBot ? 1 : 0, simulation.outcome, matchType,
     ratingDeltas.attacker, ratingDeltas.defender, attackScoreGain, defenseScoreGain,
     simulation.combatVersion, seed, JSON.stringify(simulation)));
   await env.PUBLIC_PLAYER_DB.batch(statements);
   const updated = await getArenaRow(env.PUBLIC_PLAYER_DB, gameId, playerId);
   return json(request, {
     battle: {
-      battleId, combatVersion: simulation.combatVersion, resolvedAtMs: nowMs, seed,
+      battleId, matchType, combatVersion: simulation.combatVersion, resolvedAtMs: nowMs, seed,
       outcome: simulation.outcome, firstSide: simulation.firstSide,
       attackerMaxHp: simulation.attackerMaxHp, defenderMaxHp: simulation.defenderMaxHp,
       attackerHpAfter: simulation.attackerHpAfter, defenderHpAfter: simulation.defenderHpAfter,
@@ -626,6 +648,18 @@ async function handleArenaRandomBattle(request, env, gameId, playerId) {
     },
     arena: arenaView(updated, await arenaRank(env.PUBLIC_PLAYER_DB, updated)),
   });
+}
+
+async function handleArenaRandomBattle(request, env, gameId, playerId) {
+  return handleArenaBattle(request, env, gameId, playerId, 'random');
+}
+
+async function handleArenaChallengeBattle(request, env, gameId, playerId) {
+  const parsed = await readSmallJson(request, 512);
+  if (parsed.error) return json(request, { error: parsed.error }, { status: parsed.error === 'payload-too-large' ? 413 : 400 });
+  const defenderId = parsed.value?.defenderId;
+  if (typeof defenderId !== 'string' || defenderId.length < 1 || defenderId.length > 128) return json(request, { error: 'invalid-defender-id' }, { status: 400 });
+  return handleArenaBattle(request, env, gameId, playerId, 'challenge', defenderId);
 }
 
 export default {
@@ -645,6 +679,7 @@ export default {
       if (arena?.kind === 'arena-loadout' && request.method === 'PUT') return await handleArenaLoadout(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-pets' && request.method === 'PUT') return await handleArenaPets(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-random-battle' && request.method === 'POST') return await handleArenaRandomBattle(request, env, arena.gameId, arena.playerId);
+      if (arena?.kind === 'arena-challenge-battle' && request.method === 'POST') return await handleArenaChallengeBattle(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-history' && request.method === 'GET') return await handleArenaHistory(request, env, arena.gameId, arena.playerId);
       if (arena?.kind === 'arena-leaderboard' && request.method === 'GET') return await handleArenaLeaderboard(request, env, arena.gameId);
 
