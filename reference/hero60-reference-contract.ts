@@ -37,6 +37,7 @@ export const hero60Reference = {
   battleLog: { localDisplayOptions: [10, 30, 50] as const, localDeviceSpecific: true },
   battleVisuals: { levelSpecificBackgrounds: true, documentedMonsterLevels: 12, dayparts: 4 },
   simpleBattle: { resultModal: false, fullOrbDropsDiscarded: true, defeatGoldRecoveryAvailable: false },
+  mimicBank: { outcomeMultipliers: [0.1, 0.5, 1, 2] as const, withdrawGemCostMin: 10, withdrawGemCostMax: 30, exactOddsPublic: false },
   achievementTitles: { referenceCountAtLeast: 300, selectableDisplaySlots: 1 },
   goldBags: {
     gemCosts: [30, 100, 300] as const,

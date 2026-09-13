@@ -19,6 +19,7 @@ import {
 } from '../definitions/game-definitions';
 import { soloAchievementCategoryLabels, soloAchievementDefinitions, type SoloAchievementCategory } from '../definitions/achievement-definitions';
 import { battleSceneDefinition, type BattleSceneDaypart } from '../definitions/battle-scene-definitions';
+import { mimicBankGemCosts, mimicBankOutcomes, mimicBankProductOwnedOdds, type MimicBankGemCost } from '../definitions/mimic-bank-definitions';
 import { TITLE_RESET_COST, TITLE_SHOP_PRICE, titleDefinitions, type MinuteVanguardTitleDefinition } from '../definitions/title-definitions';
 import type { BattleResult, EquipmentData, GoldBagId, MinuteVanguardState, RewardBreakdownEntry, StatKey, TimeBoostKind } from '../definitions/types';
 import {
@@ -50,6 +51,7 @@ import {
   dailyMissions,
   dailyMissionNextReward,
   dailyMissionValue,
+  depositAllGoldToMimicBank,
   effectiveBattleCooldownSec,
   expandOrbCapacity,
   equipOwnedItem,
@@ -102,13 +104,14 @@ import {
   trainPet,
   unequipOwnedTitle,
   upgradeItem,
+  withdrawMimicBank,
 } from '../plugin/engine';
 import { publicPlayerDirectory } from './public-player-directory';
 
 const session = new GameSession();
 type MainTab = 'shop' | 'equipment' | 'battle' | 'collection' | 'ranking';
 type EquipmentTab = 'weapon' | 'armor' | 'orb' | 'pet' | 'title';
-type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | 'tap-game' | null;
+type Modal = 'mission' | 'job' | 'menu' | 'orb-combine' | 'login' | 'tap-game' | 'mimic-bank' | null;
 type NoticePresentation = PresentationQueueItem & Readonly<{ text: string }>;
 const STAT_LABELS: Readonly<Record<StatKey, string>> = { hp: 'HP', attack: 'ATK', defense: 'DEF', magicAttack: 'MAT', magicDefense: 'MDF', luck: 'LUK' };
 
@@ -269,7 +272,7 @@ export function MinuteVanguardApp() {
           const result = skipBattleCooldown(state);
           if (!result.accepted) setNotice('クールダウンをスキップできません');
           else commit(result.state, '待ち時間をスキップしました');
-        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onSimpleBattle={() => setSimpleBattleOpen(true)} onTapGame={() => setModal('tap-game')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
+        }} onMonsterLevel={(level) => { const result = setMonsterLevel(state, level); if (!result.accepted) setNotice('そのモンスターレベルはまだ解放されていません'); else commit(result.state, `モンスターレベル ${level} を選択しました`); }} onSimpleBattle={() => setSimpleBattleOpen(true)} onTapGame={() => setModal('tap-game')} onMimic={() => setModal('mimic-bank')} onMission={() => setModal('mission')} onJob={() => setModal('job')} onRecover={onRecoverDefeatGold} />}
         {tab === 'equipment' && <EquipmentView state={state} active={equipmentTab} setActive={setEquipmentTab} onSelect={setSelectedItemId} onBuy={(definitionId) => {
           const result = buyEquipment(state, definitionId);
           if (!result.accepted) setNotice('購入に必要なGoldが足りません');
@@ -365,7 +368,7 @@ export function MinuteVanguardApp() {
         <NavButton icon="♛" label="ランキング" active={tab === 'ranking'} onClick={() => setTab('ranking')} />
       </nav>
 
-      {simpleBattleOpen && <SimpleBattleView state={state} onFight={onSimpleFight} onClose={() => setSimpleBattleOpen(false)} />}
+      {simpleBattleOpen && <SimpleBattleView state={state} onFight={onSimpleFight} onDeposit={() => { const result = depositAllGoldToMimicBank(state); if (result.accepted) commit(result.state); }} onClose={() => setSimpleBattleOpen(false)} />}
       {battleResult !== null && <BattleResultModal result={battleResult} step={battleStep} jobName={job.displayName} recoveryAmount={state.gameData.recoverableDefeatGold} onRecover={onRecoverDefeatGold} onClose={() => setBattleResult(null)} />}
       {battleResult === null && state.gameData.pendingOrbReplacementItemId !== null && <OrbReplacementModal state={state} onResolve={(discardItemId) => {
         const result = resolveOrbReplacement(state, discardItemId);
@@ -415,6 +418,15 @@ export function MinuteVanguardApp() {
         if (!result.accepted) setNotice('本日のログインボーナスは受取済みです');
         else { commit(result.state, `ログイン${preview.day}日目の報酬を受け取りました`); setModal(null); }
       }} />}
+      {modal === 'mimic-bank' && <MimicBankModal state={state} onClose={() => setModal(null)} onDeposit={() => {
+        const result = depositAllGoldToMimicBank(state);
+        if (!result.accepted) setNotice('預けられるGoldがありません');
+        else commit(result.state, `${result.state.gameData.mimicBankGold.toLocaleString()}G をミミックへ預けました`);
+      }} onWithdraw={(cost) => {
+        const result = withdrawMimicBank(state, cost);
+        if (!result.accepted) setNotice(result.reason === 'insufficient-gems' ? '引き出しに必要なジェムが足りません' : 'ミミック銀行は空です');
+        else commit(result.state, `ミミック銀行：${result.state.gameData.lastMimicBankResult?.returnedGold.toLocaleString() ?? 0}G 戻りました`);
+      }} />}
       {modal === 'tap-game' && <MonsterTapGame state={state} onClose={() => setModal(null)} />}
       {modal === 'menu' && <MenuModal loginAvailable={loginBonusPreview(state).available} onLogin={() => setModal('login')} onClose={() => setModal(null)} onReset={async () => {
         if (!window.confirm('セーブデータを削除して最初から始めますか？')) return;
@@ -426,7 +438,14 @@ export function MinuteVanguardApp() {
   );
 }
 
-function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
+function formatCompactGold(value: number): string {
+  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(1)}B`;
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${Math.floor(value / 1_000)}K`;
+  return String(Math.floor(value));
+}
+
+function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onRare: () => void; onBoost: () => void; onSkip: () => void; onMonsterLevel: (level: number) => void; onSimpleBattle: () => void; onTapGame: () => void; onMimic: () => void; onMission: () => void; onJob: () => void; onRecover: () => void }>) {
   const { state } = props;
   const cooldown = battleCooldown(state);
   const skipCost = cooldownSkipCost(state);
@@ -473,13 +492,13 @@ function BattleTab(props: Readonly<{ state: MinuteVanguardState; onFight: () => 
     <div className="quick-actions">
       <button onClick={props.onMission}><span>✓</span><small>ミッション</small><em>{dailyMissions(state).filter((mission) => dailyMissionValue(state, mission) >= mission.target).length}/5</em></button>
       <button onClick={props.onJob}><span>♻</span><small>転職</small>{state.gameData.player.level >= 30 && <em>!</em>}</button>
-      <button disabled title="ミミック銀行は確率仕様を確認してから接続します"><span>🎭</span><small>ミミック銀行</small></button>
+      <button onClick={props.onMimic}><span>🎭</span><small>ミミック銀行</small>{state.gameData.mimicBankGold > 0 && <em>{formatCompactGold(state.gameData.mimicBankGold)}</em>}</button>
     </div>
     <BattleHistory state={state} />
   </section>;
 }
 
-function SimpleBattleView(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onClose: () => void }>) {
+function SimpleBattleView(props: Readonly<{ state: MinuteVanguardState; onFight: () => void; onDeposit: () => void; onClose: () => void }>) {
   const [startedAtBattle] = useState(props.state.gameData.totalBattles);
   const cooldown = battleCooldown(props.state);
   const stats = playerCombatStats(props.state);
@@ -494,6 +513,7 @@ function SimpleBattleView(props: Readonly<{ state: MinuteVanguardState; onFight:
       <span>狩場 <b>Lv.{props.state.gameData.selectedMonsterLevel}</b></span>
     </div>
     <button className="simple-fight-button" onClick={props.onFight} disabled={!cooldown.ready}>{cooldown.ready ? '戦闘する' : `${cooldown.remainingSec}秒`}</button>
+    <button className="simple-deposit-button" onClick={props.onDeposit} disabled={goldBalance(props.state) < 1}>ミミック銀行へ全額預ける · 銀行 {Math.floor(props.state.gameData.mimicBankGold).toLocaleString()}G</button>
     <p className="simple-warning">オーブ枠が満杯のとき、新しいオーブは破棄されます。敗北Gold回収は通常画面でのみ利用できます。</p>
     <div className="simple-log">
       {entries.length === 0 ? <p>この画面で戦うと、ここに1行ずつ記録されます。</p> : entries.map((entry) => <div key={entry.battleIndex}>
@@ -1062,6 +1082,24 @@ function JobModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => v
   const cost = jobChangeCost(props.state);
   const requirement = currentJobBonusRequirement(props.state);
   return <ModalFrame title="転職" onClose={props.onClose}><div className="job-summary"><span>現在 Lv.{props.state.gameData.player.level}</span><strong>{currentJob(props.state).displayName}</strong><small>永続ボーナス条件 Lv.{requirement} / 費用 {cost.toLocaleString()}G</small></div><div className="job-list">{availableJobs(props.state).map((job) => <button key={job.id} onClick={() => props.onChange(job.id)} disabled={props.state.gameData.player.level < 30 || goldBalance(props.state) < cost}><span>♟</span><span><strong>{job.displayName}</strong><small>{job.skillName} — {job.skillDescription}</small></span><em>選ぶ</em></button>)}</div><p className="modal-description">転職するとLv.1へ戻ります。装備・ジェム・討伐数は保持されます。</p></ModalFrame>;
+}
+
+function MimicBankModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onDeposit: () => void; onWithdraw: (cost: MimicBankGemCost) => void }>) {
+  const carried = Math.floor(goldBalance(props.state));
+  const bank = Math.floor(props.state.gameData.mimicBankGold);
+  const last = props.state.gameData.lastMimicBankResult;
+  return <ModalFrame title="ミミック銀行" onClose={props.onClose}>
+    <div className="mimic-bank-balance"><span>手持ち<strong>{carried.toLocaleString()} G</strong></span><span>預け入れ<strong>{bank.toLocaleString()} G</strong></span></div>
+    <button className="mimic-deposit" onClick={props.onDeposit} disabled={carried <= 0}>手持ちGoldを全額預ける</button>
+    <p className="modal-description">引き出すと、預けたGoldが10%・50%・100%・200%のどれかになって戻ります。多くのGemを使うほど好結果が増えます。</p>
+    <div className="mimic-withdraw-options">{mimicBankGemCosts.map((cost) => <button key={cost} onClick={() => props.onWithdraw(cost)} disabled={bank <= 0 || gemBalance(props.state) < cost}>
+      <strong>💎 {cost} で引き出す</strong>
+      <span>{mimicBankOutcomes.map((outcome) => `${outcome.displayName} ${Math.round(mimicBankProductOwnedOdds[cost][outcome.id] * 100)}%`).join(' · ')}</span>
+    </button>)}</div>
+    <p className="mimic-owned-odds-note">※ 結果4種と10〜30Gemは公開仕様。各確率はMinute Vanguard独自バランスです。</p>
+    {last !== null && <div className={`mimic-last-result ${last.multiplier >= 1 ? 'good' : 'bad'}`}><small>前回</small><strong>{last.multiplier === .1 ? '10%返却' : last.multiplier === .5 ? '半分' : last.multiplier === 1 ? '全額' : '2倍'}</strong><span>{last.depositedGold.toLocaleString()}G → {last.returnedGold.toLocaleString()}G</span></div>}
+    <p className="mimic-loss-total">累計がぼられ：{Math.floor(props.state.gameData.mimicBankTotalLostGold).toLocaleString()} G</p>
+  </ModalFrame>;
 }
 
 function LoginBonusModal(props: Readonly<{ state: MinuteVanguardState; onClose: () => void; onClaim: () => void }>) {

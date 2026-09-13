@@ -61,6 +61,7 @@ import {
   type TitleEffectFamily,
 } from '../definitions/title-definitions';
 import { duplicateSnackRewardByRarity, gachaPetDefinitions, type GachaPetSpecialEffect } from '../definitions/gacha-pet-definitions';
+import { mimicBankGemCosts, mimicBankOutcomeForRoll, type MimicBankGemCost } from '../definitions/mimic-bank-definitions';
 import { soloAchievementDefinitions, type SoloAchievementDefinition, type SoloAchievementMetric } from '../definitions/achievement-definitions';
 import type {
   BattleLogEntry,
@@ -236,6 +237,9 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
       rareGuaranteeActive: false,
       battleBoostActive: false,
       recoverableDefeatGold: 0,
+      mimicBankGold: 0,
+      mimicBankTotalLostGold: 0,
+      lastMimicBankResult: null,
       permanentUpgrades: {
         freeCooldownSkips: false,
         cooldownReduction: false,
@@ -270,8 +274,11 @@ export function createInitialState(nowMs = Date.now(), seed = 0x60b0_2026): Minu
 /** Old public prototype saves are intentionally upgraded into the richer v1 schema. */
 export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.now()): MinuteVanguardState {
   if (state.schemaVersion === SCHEMA_VERSION && state.definitionVersion === definitionVersion) {
+    const mimicSeed = state.rngStreams[ids.rng.encounter]?.state ?? 0x60b0_2026;
+    const mimicStream = state.rngStreams[ids.rng.mimic] ?? createRngStreams(mimicSeed, [ids.rng.mimic])[ids.rng.mimic]!;
     return {
       ...state,
+      rngStreams: { ...state.rngStreams, [ids.rng.mimic]: mimicStream },
       gameData: {
         ...state.gameData,
         orbCapacity: state.gameData.orbCapacity ?? ORB_BASE_CAPACITY,
@@ -286,6 +293,9 @@ export function normalizeLoadedState(state: MinuteVanguardState, nowMs = Date.no
         selectedAchievementId: state.gameData.selectedAchievementId ?? null,
         battleBoostActive: state.gameData.battleBoostActive ?? false,
         recoverableDefeatGold: state.gameData.recoverableDefeatGold ?? 0,
+        mimicBankGold: state.gameData.mimicBankGold ?? 0,
+        mimicBankTotalLostGold: state.gameData.mimicBankTotalLostGold ?? 0,
+        lastMimicBankResult: state.gameData.lastMimicBankResult ?? null,
         encounterCounts: state.gameData.encounterCounts ?? { ...state.gameData.killCounts },
         mutatedEncounterCounts: state.gameData.mutatedEncounterCounts ?? {},
         recentVictoryMonsterLevels: state.gameData.recentVictoryMonsterLevels ?? [],
@@ -1254,6 +1264,66 @@ export function fightSimple(state: MinuteVanguardState): CommandResult<MinuteVan
   const resolved = resolveOrbReplacement(result.state, pendingId);
   if (!resolved.accepted) return result;
   return accept(resolved.state, [...result.events, ...resolved.events]);
+}
+
+export function depositAllGoldToMimicBank(
+  state: MinuteVanguardState,
+): CommandResult<MinuteVanguardState, 'no-gold'> {
+  const carriedGold = Math.floor(goldBalance(state));
+  if (carriedGold <= 0) return reject(state, 'no-gold');
+  const transfer = applyCurrencyTransaction(
+    state.currencies,
+    { currencyId: ids.currency.gold, amount: carriedGold, kind: 'spend', source: 'mimic.deposit' },
+    resolveCurrencyDefinition(ids.currency.gold),
+  );
+  if (!transfer.accepted) return reject(state, 'no-gold');
+  const nextState: MinuteVanguardState = {
+    ...state,
+    currencies: transfer.balances,
+    gameData: { ...state.gameData, mimicBankGold: state.gameData.mimicBankGold + carriedGold },
+  };
+  return accept(nextState, [event(nextState, 'mimicGoldDeposited', `${carriedGold}`, { amount: carriedGold })]);
+}
+
+export function withdrawMimicBank(
+  state: MinuteVanguardState,
+  gemCost: MimicBankGemCost,
+): CommandResult<MinuteVanguardState, 'empty-bank' | 'invalid-gem-cost' | 'insufficient-gems'> {
+  if (state.gameData.mimicBankGold <= 0) return reject(state, 'empty-bank');
+  if (!mimicBankGemCosts.includes(gemCost)) return reject(state, 'invalid-gem-cost');
+  const spend = spendCurrency(state, ids.currency.gem, gemCost, `mimic.withdraw.${gemCost}`);
+  if (!spend.accepted) return reject(state, 'insufficient-gems');
+  const roll = draw(spend.state, ids.rng.mimic);
+  const outcome = mimicBankOutcomeForRoll(gemCost, roll.value);
+  const depositedGold = Math.floor(state.gameData.mimicBankGold);
+  const returnedGold = Math.max(0, Math.floor(depositedGold * outcome.multiplier));
+  const lostGold = Math.max(0, depositedGold - returnedGold);
+  const credit = applyCurrencyTransaction(
+    roll.state.currencies,
+    { currencyId: ids.currency.gold, amount: returnedGold, kind: 'earn', source: 'mimic.withdraw' },
+    resolveCurrencyDefinition(ids.currency.gold),
+  );
+  if (!credit.accepted) throw new Error('Mimic Bank Gold credit unexpectedly failed.');
+  const nextState: MinuteVanguardState = {
+    ...roll.state,
+    currencies: credit.balances,
+    gameData: {
+      ...roll.state.gameData,
+      mimicBankGold: 0,
+      mimicBankTotalLostGold: roll.state.gameData.mimicBankTotalLostGold + lostGold,
+      lastMimicBankResult: {
+        gemCost,
+        outcomeId: outcome.id,
+        multiplier: outcome.multiplier,
+        depositedGold,
+        returnedGold,
+        lostGold,
+      },
+    },
+  };
+  return accept(nextState, [event(nextState, 'mimicBankWithdrawn', `${gemCost}:${outcome.id}`, {
+    gemCost, outcomeId: outcome.id, depositedGold, returnedGold, lostGold,
+  })]);
 }
 
 export function buyEquipment(

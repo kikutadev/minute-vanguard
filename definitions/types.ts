@@ -190,6 +190,15 @@ export type PlayerProgress = Readonly<{
   petCount: number;
 }>;
 
+export type MimicBankResult = Readonly<{
+  gemCost: 10 | 20 | 30;
+  outcomeId: 'return-10' | 'return-50' | 'return-100' | 'return-200';
+  multiplier: number;
+  depositedGold: number;
+  returnedGold: number;
+  lostGold: number;
+}>;
+
 export type PermanentUpgradeState = Readonly<{
   freeCooldownSkips: boolean;
   cooldownReduction: boolean;
@@ -222,6 +231,9 @@ export type MinuteVanguardGameData = Readonly<{
   rareGuaranteeActive: boolean;
   battleBoostActive: boolean;
   recoverableDefeatGold: number;
+  mimicBankGold: number;
+  mimicBankTotalLostGold: number;
+  lastMimicBankResult: MimicBankResult | null;
   permanentUpgrades: PermanentUpgradeState;
   freeCooldownSkipUsage: Readonly<{ dayKey: string; used: number }>;
   ownedPetEnemyIds: readonly string[];

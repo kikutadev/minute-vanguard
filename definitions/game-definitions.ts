@@ -11,7 +11,7 @@ export const definitionVersion = '0.2.0';
 
 export const ids = {
   currency: { gold: 'currency.gold', gem: 'currency.gem' },
-  rng: { encounter: 'rng.encounter', combat: 'rng.combat', loot: 'rng.loot', growth: 'rng.growth' },
+  rng: { encounter: 'rng.encounter', combat: 'rng.combat', loot: 'rng.loot', growth: 'rng.growth', mimic: 'rng.mimic' },
   cooldown: { battle: 'cooldown.battle' },
   loadout: { hero: 'loadout.hero' },
   item: {
